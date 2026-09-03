@@ -1,0 +1,104 @@
+"""
+Tests d'isolation du pipeline (niveau intégration légère).
+Utilise une base SQLite en mémoire (aucun service externe réel) et mocke
+la collecte RSS, la rédaction IA et les publishers.
+
+Vérifie la garantie centrale demandée : si le traitement d'UN article échoue
+(erreur inattendue), les autres articles urgents du même cycle sont quand
+même traités.
+"""
+from unittest.mock import patch
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database import Base, Article
+from app import pipeline
+
+
+@pytest.fixture
+def memory_session():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
+
+
+def _make_urgent_article(session, cve_id: str) -> Article:
+    article = Article(
+        source="TestSource",
+        source_url=f"https://example.org/{cve_id}",
+        title=f"Faille critique {cve_id}",
+        raw_summary="CVSS: 9.5 exploitation confirmée",
+        content_hash=f"hash-{cve_id}",
+        cve_id=cve_id,
+        cvss_score=9.5,
+        exploited=True,
+        category="vulnerabilite",
+        urgency="urgent",
+        region=None,
+    )
+    session.add(article)
+    session.commit()
+    return article
+
+
+def test_one_failing_article_does_not_block_others(memory_session):
+    article_ok = _make_urgent_article(memory_session, "CVE-2026-11111")
+    article_broken = _make_urgent_article(memory_session, "CVE-2026-22222")
+    article_ok_2 = _make_urgent_article(memory_session, "CVE-2026-33333")
+
+    call_order = []
+
+    def fake_publish_urgent(session, article):
+        call_order.append(article.cve_id)
+        if article.id == article_broken.id:
+            raise RuntimeError("échec simulé et totalement imprévu")
+        article.published = True
+        session.commit()
+
+    with patch.object(pipeline, "_publish_urgent", side_effect=fake_publish_urgent):
+        for article in [article_ok, article_broken, article_ok_2]:
+            try:
+                pipeline._publish_urgent(memory_session, article)
+            except Exception:
+                memory_session.rollback()
+                continue
+
+    # Les trois articles ont bien été tentés, dans l'ordre, malgré l'échec du deuxième.
+    assert call_order == ["CVE-2026-11111", "CVE-2026-22222", "CVE-2026-33333"]
+
+    memory_session.refresh(article_ok)
+    memory_session.refresh(article_ok_2)
+    memory_session.refresh(article_broken)
+    assert article_ok.published is True
+    assert article_ok_2.published is True
+    assert article_broken.published is False  # jamais marqué publié suite à l'échec
+
+
+def test_store_new_entries_skips_invalid_entry_but_keeps_others(memory_session):
+    """Une entrée mal formée (champ requis manquant) est ignorée sans bloquer les suivantes."""
+    entries = [
+        {
+            "source": "TestSource",
+            "source_url": "https://example.org/ok",
+            "title": "Article valide",
+            "raw_summary": "Résumé.",
+            "content_hash": "hash-valide",
+        },
+        {
+            # "title" manquant volontairement -> doit lever une KeyError interceptée
+            "source": "TestSource",
+            "source_url": "https://example.org/casse",
+            "raw_summary": "Résumé.",
+            "content_hash": "hash-casse",
+        },
+    ]
+
+    stored = pipeline._store_new_entries(memory_session, entries)
+
+    assert len(stored) == 1
+    assert stored[0].content_hash == "hash-valide"

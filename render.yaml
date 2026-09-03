@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: segenghost-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    numInstances: 1
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_API_TOKEN
+        sync: false
+      - key: DASHBOARD_USERNAME
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: DISCORD_WEBHOOK_URGENT
+        sync: false
+      - key: DISCORD_WEBHOOK_DIGEST
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL_CHAT_ID
+        sync: false
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: claude-sonnet-4-6
+      - key: AI_MAX_RETRIES
+        value: "2"
+      - key: AI_TIMEOUT_SECONDS
+        value: "30"
+      - key: CVSS_URGENT_THRESHOLD
+        value: "8.5"
+      - key: COLLECT_INTERVAL_MINUTES
+        value: "15"
+      - key: HTTP_TIMEOUT_SECONDS
+        value: "15"
+      - key: RSS_FETCH_MAX_RETRIES
+        value: "2"
+      - key: LOG_LEVEL
+        value: INFO

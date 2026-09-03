@@ -1,0 +1,100 @@
+"""
+Configuration centrale de SegenGhost Security.
+Toutes les valeurs sensibles (tokens, clés API) sont lues depuis les variables
+d'environnement — jamais codées en dur ici, et jamais logguées.
+"""
+import logging
+import os
+from secrets import compare_digest
+from dataclasses import dataclass, field
+from typing import List
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger("segenghost.config")
+
+
+@dataclass
+class Settings:
+    # --- Base de données ---
+    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./segenghost.db")
+
+    # --- Discord ---
+    discord_webhook_urgent: str = os.getenv("DISCORD_WEBHOOK_URGENT", "")
+    discord_webhook_digest: str = os.getenv("DISCORD_WEBHOOK_DIGEST", "")
+
+    # --- Telegram ---
+    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    telegram_admin_chat_id: str = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
+    telegram_channel_chat_id: str = os.getenv("TELEGRAM_CHANNEL_CHAT_ID", "")
+
+    # --- IA (rédaction contrôlée) ---
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    ai_model: str = os.getenv("AI_MODEL", "claude-sonnet-4-6")
+    ai_max_retries: int = int(os.getenv("AI_MAX_RETRIES", "2"))
+    ai_timeout_seconds: float = float(os.getenv("AI_TIMEOUT_SECONDS", "30"))
+
+    # --- Seuils de classification ---
+    cvss_urgent_threshold: float = float(os.getenv("CVSS_URGENT_THRESHOLD", "8.5"))
+
+    # --- Planification du digest (heures locales, format HH:MM) ---
+    digest_times: List[str] = field(default_factory=lambda: ["08:00", "14:00", "19:00"])
+
+    # --- Fréquence de collecte (minutes) ---
+    collect_interval_minutes: int = int(os.getenv("COLLECT_INTERVAL_MINUTES", "15"))
+
+    # --- Réseau / résilience ---
+    http_timeout_seconds: float = float(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))
+    rss_fetch_max_retries: int = int(os.getenv("RSS_FETCH_MAX_RETRIES", "2"))
+
+    # --- Logging ---
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+
+    # --- Protection des routes d'administration et du dashboard ---
+    admin_api_token: str = os.getenv("ADMIN_API_TOKEN", "")
+    dashboard_username: str = os.getenv("DASHBOARD_USERNAME", "")
+    dashboard_password: str = os.getenv("DASHBOARD_PASSWORD", "")
+    scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() in {"1", "true", "yes"}
+
+
+settings = Settings()
+
+
+def validate_config() -> List[str]:
+    """
+    Vérifie la présence des variables jugées nécessaires au fonctionnement complet.
+    Ne lève pas d'exception : le bot doit pouvoir démarrer en mode dégradé
+    (ex. dashboard consultable même si Discord/Telegram ne sont pas configurés),
+    mais chaque absence est clairement signalée au démarrage.
+    Retourne la liste des avertissements (chaîne vide si tout est configuré).
+    """
+    warnings: List[str] = []
+
+    if not settings.anthropic_api_key:
+        warnings.append("ANTHROPIC_API_KEY manquant — la rédaction IA échouera à l'exécution.")
+
+    if not settings.admin_api_token:
+        warnings.append("ADMIN_API_TOKEN manquant — les endpoints de déclenchement restent désactivés.")
+    if not settings.dashboard_username or not settings.dashboard_password:
+        warnings.append("DASHBOARD_USERNAME/PASSWORD manquants — le dashboard reste accessible sans authentification.")
+
+    if not settings.discord_webhook_urgent and not settings.discord_webhook_digest:
+        warnings.append("Aucun webhook Discord configuré — publication Discord désactivée.")
+
+    if not settings.telegram_bot_token:
+        warnings.append("TELEGRAM_BOT_TOKEN manquant — publication Telegram désactivée.")
+    else:
+        if not settings.telegram_channel_chat_id:
+            warnings.append("TELEGRAM_CHANNEL_CHAT_ID manquant — publication sur le canal désactivée.")
+        if not settings.telegram_admin_chat_id:
+            warnings.append("TELEGRAM_ADMIN_CHAT_ID manquant — notification admin (relai WhatsApp) désactivée.")
+
+    for warning in warnings:
+        logger.warning("Configuration incomplète : %s", warning)
+
+    if not warnings:
+        logger.info("Configuration validée : toutes les variables attendues sont présentes.")
+
+    return warnings

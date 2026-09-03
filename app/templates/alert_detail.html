@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} — SegenGhost Security{% endblock %}
+{% block content %}
+
+<header class="masthead">
+  <p class="masthead__title">SegenGhost Security</p>
+</header>
+
+<div class="detail">
+  <a class="back" href="/dashboard">&larr; Retour à l'historique</a>
+  <h1>{{ article.title }}</h1>
+
+  <div class="fields">
+    <div><span class="k">Urgence</span><span class="v">{{ article.urgency }}</span></div>
+    <div><span class="k">CVE</span><span class="v">{{ article.cve_id or "non disponible" }}</span></div>
+    <div><span class="k">CVSS</span><span class="v">{{ article.cvss_score if article.cvss_score is not none else "non disponible" }}</span></div>
+    <div><span class="k">Exploitation</span><span class="v">{{ "Oui" if article.exploited else "non disponible" }}</span></div>
+    <div><span class="k">Catégorie</span><span class="v">{{ article.category or "non disponible" }}</span></div>
+    <div><span class="k">Zone géographique</span><span class="v">{{ article.region or "non spécifique" }}</span></div>
+    <div><span class="k">Source</span><span class="v">{{ article.source }}</span></div>
+    <div><span class="k">Collecté le</span><span class="v">{{ article.collected_at.strftime('%d/%m/%Y %H:%M UTC') }}</span></div>
+  </div>
+
+  <div class="body-text">{{ article.ai_rewritten_text or article.raw_summary or "Contenu non disponible." }}</div>
+
+  <p style="margin-top: 24px;">
+    <a class="back" href="{{ article.source_url }}" target="_blank" rel="noopener noreferrer">Consulter la source officielle &rarr;</a>
+  </p>
+</div>
+
+{% endblock %}

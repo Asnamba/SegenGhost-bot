@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}SegenGhost Security — Dashboard{% endblock %}
+{% block content %}
+
+<header class="masthead">
+  <p class="masthead__title">SegenGhost Security</p>
+  <p class="masthead__subtitle">Poste de veille cybersécurité — historique des alertes</p>
+  <div class="stats-row">
+    <div class="stat stat--total">
+      <span class="stat__value">{{ stats.total }}</span>
+      <span class="stat__label">Alertes publiées</span>
+    </div>
+    <div class="stat stat--urgent">
+      <span class="stat__value">{{ stats.urgent }}</span>
+      <span class="stat__label">Urgentes</span>
+    </div>
+    <div class="stat stat--digest">
+      <span class="stat__value">{{ stats.digest }}</span>
+      <span class="stat__label">Digest</span>
+    </div>
+  </div>
+</header>
+
+<form class="filters" method="get" action="/dashboard">
+  <input type="text" name="q" placeholder="Rechercher (titre, CVE...)" value="{{ filters.q or '' }}">
+
+  <select name="urgency">
+    <option value="">Toute urgence</option>
+    <option value="urgent" {% if filters.urgency == "urgent" %}selected{% endif %}>Urgent</option>
+    <option value="digest" {% if filters.urgency == "digest" %}selected{% endif %}>Digest</option>
+  </select>
+
+  <select name="category">
+    <option value="">Toute catégorie</option>
+    {% for c in stats.categories %}
+      <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="region">
+    <option value="">Toute zone géographique</option>
+    {% for r in stats.regions %}
+      <option value="{{ r }}" {% if filters.region == r %}selected{% endif %}>{{ r }}</option>
+    {% endfor %}
+  </select>
+
+  <input type="date" name="date_from" value="{{ filters.date_from or '' }}">
+  <input type="date" name="date_to" value="{{ filters.date_to or '' }}">
+
+  <button type="submit">Filtrer</button>
+</form>
+
+<main class="list">
+  {% if articles %}
+    {% for a in articles %}
+      {% set score = a.cvss_score or 0 %}
+      {% set ticks = ((score / 10 * 5) | round(0, 'ceil') | int) if score else 0 %}
+      <a class="row" href="/dashboard/alert/{{ a.id }}">
+        <div class="row__bar row__bar--{{ a.urgency }}"></div>
+        <div class="meter" aria-hidden="true">
+          {% for i in range(1, 6) %}
+            {% if i <= ticks %}
+              <span class="{{ 'on--critical' if score >= 8.5 else ('on--amber' if score >= 5 else 'on--ok') }}" style="height: {{ i * 4 }}px;"></span>
+            {% else %}
+              <span style="height: {{ i * 4 }}px;"></span>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <div class="row__body">
+          <div class="row__title">{{ a.title }}</div>
+          <div class="row__meta">
+            {% if a.cve_id %}<span class="tag mono">{{ a.cve_id }}</span>{% endif %}
+            {% if a.cvss_score %}<span class="tag mono">CVSS {{ a.cvss_score }}</span>{% endif %}
+            <span class="tag">{{ a.category or "général" }}</span>
+            {% if a.region %}<span class="tag">{{ a.region }}</span>{% endif %}
+            <span>{{ a.source }}</span>
+          </div>
+        </div>
+        <div class="row__aside">{{ a.collected_at.strftime('%d/%m/%Y %H:%M') }}</div>
+      </a>
+    {% endfor %}
+  {% else %}
+    <div class="empty">Aucune alerte ne correspond à ces critères de recherche.</div>
+  {% endif %}
+</main>
+
+{% endblock %}
