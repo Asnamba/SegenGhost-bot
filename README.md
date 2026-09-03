@@ -76,12 +76,20 @@ le port fourni par la plateforme via `PORT`. Le démarrage ne contient pas
 1. Pousser le projet sur GitHub, puis créer un **Web Service** depuis ce dépôt.
 2. Utiliser `pip install -r requirements.txt` comme Build Command et
   `uvicorn app.main:app --host 0.0.0.0 --port $PORT` comme Start Command.
-3. Créer une base PostgreSQL Render compatible avec le plan disponible sur
-  votre compte, puis copier son URL de connexion dans `DATABASE_URL`.
-  La disponibilité d'une base PostgreSQL gratuite dépend des offres Render
-  en vigueur ; elle n'est pas garantie par le code du projet.
-4. Définir le health check sur `/health` et conserver `numInstances: 1`.
+3. Utiliser le Blueprint `render.yaml` avec **Apply** : il déclare le service
+  web et une base PostgreSQL `segenghost-db`, tous deux en plan `free`, et
+  injecte automatiquement sa `connectionString` dans `DATABASE_URL`.
+4. Si la base est créée séparément, copier son URL de connexion interne dans
+  `DATABASE_URL` du service web. La base PostgreSQL gratuite Render indiquée
+  par la plateforme est limitée à 1 Go et expire après 30 jours sauf upgrade
+  ou changement d'offre : vérifier les conditions actuelles dans Render.
+5. Définir le health check sur `/health` et conserver `numInstances: 1`.
   `render.yaml` préconfigure ces paramètres et les variables d'environnement.
+
+Le plan gratuit du Web Service peut se mettre en veille après une période
+d'inactivité. Un ping externe de `/health` toutes les 10 à 14 minutes peut
+réduire cette mise en veille, sans garantir la disponibilité continue ni le
+fonctionnement permanent du scheduler.
 
 PostgreSQL est déjà supporté par SQLAlchemy et `psycopg2-binary`. Pour un
 premier déploiement, `Base.metadata.create_all()` crée les tables absentes,
@@ -90,21 +98,22 @@ avant les évolutions de schéma sur une base contenant déjà des données.
 
 ### Variables d'environnement
 
-Variables obligatoires pour un déploiement public fonctionnel :
+Variables minimales pour cette phase Discord seul :
 
 | Variable | Valeur exemple | Rôle |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://user:password@host:5432/db` | URL PostgreSQL de la plateforme |
+| `DATABASE_URL` | `injectée par Render` | URL PostgreSQL liée au service |
 | `ADMIN_API_TOKEN` | `générer-un-token-long` | Protège les routes `/trigger/*` |
 | `DASHBOARD_USERNAME` | `admin` | Utilisateur HTTP Basic du dashboard/API |
 | `DASHBOARD_PASSWORD` | `mot-de-passe-long-et-unique` | Mot de passe HTTP Basic |
 | `SCHEDULER_ENABLED` | `true` | Doit être `true` sur l'unique instance web |
 | `ANTHROPIC_API_KEY` | `sk-ant-...` | Rédaction IA |
-| `DISCORD_WEBHOOK_URGENT` | `https://discord.com/api/webhooks/...` | Publication urgente, optionnelle si Telegram est actif |
-| `DISCORD_WEBHOOK_DIGEST` | `https://discord.com/api/webhooks/...` | Publication digest, optionnelle |
-| `TELEGRAM_BOT_TOKEN` | `123456:ABC...` | Bot Telegram |
-| `TELEGRAM_CHANNEL_CHAT_ID` | `-1001234567890` | Canal Telegram |
-| `TELEGRAM_ADMIN_CHAT_ID` | `123456789` | Chat privé administrateur |
+| `DISCORD_WEBHOOK_URGENT` | `https://discord.com/api/webhooks/...` | Publication urgente |
+| `DISCORD_WEBHOOK_DIGEST` | `https://discord.com/api/webhooks/...` | Publication digest |
+
+Les variables Telegram peuvent rester absentes ou vides. Le code les signale
+par avertissement et les publishers Telegram retournent `False` sans lever
+d'exception ; Discord suffit pour publier les urgences et les digests.
 
 Variables optionnelles, avec leurs valeurs par défaut :
 

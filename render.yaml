@@ -1,6 +1,7 @@
 services:
   - type: web
     name: segenghost-bot
+    plan: free
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -8,7 +9,9 @@ services:
     numInstances: 1
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: segenghost-db
+          property: connectionString
       - key: ADMIN_API_TOKEN
         sync: false
       - key: DASHBOARD_USERNAME
@@ -20,12 +23,6 @@ services:
       - key: DISCORD_WEBHOOK_URGENT
         sync: false
       - key: DISCORD_WEBHOOK_DIGEST
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHANNEL_CHAT_ID
-        sync: false
-      - key: TELEGRAM_ADMIN_CHAT_ID
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
@@ -45,3 +42,9 @@ services:
         value: "2"
       - key: LOG_LEVEL
         value: INFO
+
+databases:
+  - name: segenghost-db
+    plan: free
+    databaseName: segenghost
+    user: segenghost
