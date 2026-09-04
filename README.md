@@ -53,7 +53,7 @@ exécuter le scheduler dans un processus séparé. Renseigner `ADMIN_API_TOKEN`,
 `DASHBOARD_USERNAME` et `DASHBOARD_PASSWORD` avant toute exposition publique.
 
 - API + dashboard sur `http://localhost:8000` (la racine `/` redirige vers `/dashboard`)
-- Le scheduler démarre automatiquement : collecte toutes les 15 minutes (configurable),
+- Le scheduler démarre automatiquement : collecte toutes les 1h (configurable),
   digest publié à 8h00, 14h00 et 19h00.
 
 ## Déploiement Railway ou Render
@@ -158,7 +158,7 @@ Variables optionnelles, avec leurs valeurs par défaut :
 | `AI_MAX_RETRIES` | `2` |
 | `AI_TIMEOUT_SECONDS` | `30` |
 | `CVSS_URGENT_THRESHOLD` | `8.5` |
-| `COLLECT_INTERVAL_MINUTES` | `15` |
+| `COLLECT_INTERVAL_MINUTES` | `60` |
 | `HTTP_TIMEOUT_SECONDS` | `15` |
 | `RSS_FETCH_MAX_RETRIES` | `2` |
 | `LOG_LEVEL` | `INFO` |

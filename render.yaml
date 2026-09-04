@@ -47,7 +47,7 @@ services:
       - key: CVSS_URGENT_THRESHOLD
         value: "8.5"
       - key: COLLECT_INTERVAL_MINUTES
-        value: "15"
+        value: "60"
       - key: HTTP_TIMEOUT_SECONDS
         value: "15"
       - key: RSS_FETCH_MAX_RETRIES

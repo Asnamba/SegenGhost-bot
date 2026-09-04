@@ -50,7 +50,7 @@ class Settings:
     digest_times: List[str] = field(default_factory=lambda: ["08:00", "14:00", "19:00"])
 
     # --- Fréquence de collecte (minutes) ---
-    collect_interval_minutes: int = int(os.getenv("COLLECT_INTERVAL_MINUTES", "15"))
+    collect_interval_minutes: int = int(os.getenv("COLLECT_INTERVAL_MINUTES", "60"))
 
     # --- Réseau / résilience ---
     http_timeout_seconds: float = float(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))

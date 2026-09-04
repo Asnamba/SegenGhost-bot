@@ -68,9 +68,14 @@ def start_scheduler():
         )
 
     scheduler.start()
+    collection_schedule = (
+        "collecte toutes les 1h"
+        if settings.collect_interval_minutes == 60
+        else f"collecte toutes les {settings.collect_interval_minutes} min"
+    )
     logger.info(
-        "Scheduler démarré : collecte toutes les %d min, digests à %s",
-        settings.collect_interval_minutes,
+        "Scheduler démarré : %s, digests à %s",
+        collection_schedule,
         ", ".join(settings.digest_times),
     )
 

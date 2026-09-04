@@ -65,7 +65,14 @@ def _fetch_feed_bytes(name: str, url: str) -> Optional[bytes]:
                 url,
                 timeout=settings.http_timeout_seconds,
                 follow_redirects=True,
-                headers={"User-Agent": "SegenGhostSecurityBot/1.0 (+veille cybersecurite)"},
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                },
             )
             content_length = response.headers.get("content-length")
             if content_length and int(content_length) > 5_000_000:

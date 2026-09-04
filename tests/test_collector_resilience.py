@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from app.collectors import rss_collector
+from app.collectors.sources import SOURCES
 
 
 VALID_RSS = """<?xml version="1.0"?>
@@ -100,3 +101,27 @@ def test_fetch_feed_bytes_gives_up_after_max_retries(monkeypatch):
         result = rss_collector._fetch_feed_bytes("SourceTest", "https://example.org/feed")
 
     assert result is None
+
+
+def test_fetch_feed_uses_browser_headers():
+    response = MagicMock()
+    response.headers = {}
+    response.content = VALID_RSS
+    response.url = "https://example.org/feed"
+    response.raise_for_status = MagicMock()
+
+    with patch("app.collectors.rss_collector.httpx.get", return_value=response) as get:
+        assert rss_collector._fetch_feed_bytes("SourceTest", "https://example.org/feed") == VALID_RSS
+
+    headers = get.call_args.kwargs["headers"]
+    assert headers["User-Agent"].startswith("Mozilla/5.0")
+    assert headers["Accept"] == "application/rss+xml, application/xml, text/xml, */*"
+
+
+def test_configured_sources_use_updated_feed_urls():
+    urls = {source["name"]: source["url"] for source in SOURCES}
+    assert urls["GitHub Security Advisories"] == "https://github.com/advisories.atom"
+    assert urls["Ars Technica — Security"] == "https://feeds.arstechnica.com/arstechnica/security"
+    assert urls["Cisco Talos"] == "https://blog.talosintelligence.com/rss/"
+    assert urls["CISA KEV"] == "https://www.cisa.gov/known-exploited-vulnerabilities-catalog.xml"
+    assert urls["Microsoft Security"] == "https://api.msrc.microsoft.com/cvrf/v2.0/atom"

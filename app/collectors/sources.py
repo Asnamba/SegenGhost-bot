@@ -13,12 +13,11 @@ technique de la collecte automatique.
 SOURCES = [
     # --- Sources officielles / CERT ---
     {"name": "CISA", "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml"},
-    {"name": "CISA KEV", "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.xml"},
-    {"name": "NVD (NIST)", "url": "https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss.xml"},
+    {"name": "CISA KEV", "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog.xml"},
 
     # --- Éditeurs / vendeurs sécurité ---
-    {"name": "Microsoft Security", "url": "https://msrc.microsoft.com/blog/feed"},
-    {"name": "Cisco Talos", "url": "https://blog.talosintelligence.com/feeds/posts/default"},
+    {"name": "Microsoft Security", "url": "https://api.msrc.microsoft.com/cvrf/v2.0/atom"},
+    {"name": "Cisco Talos", "url": "https://blog.talosintelligence.com/rss/"},
     {"name": "Cloudflare Blog", "url": "https://blog.cloudflare.com/rss/"},
     {"name": "CrowdStrike", "url": "https://www.crowdstrike.com/blog/feed/"},
     {"name": "GitHub Security Advisories", "url": "https://github.com/advisories.atom"},
@@ -28,7 +27,7 @@ SOURCES = [
     {"name": "Infosecurity Magazine", "url": "https://www.infosecurity-magazine.com/rss/news/"},
     {"name": "The Register — Security", "url": "https://www.theregister.com/security/headlines.atom"},
     {"name": "The Register — Networks", "url": "https://www.theregister.com/on_prem/networks/headlines.atom"},
-    {"name": "Ars Technica — Security", "url": "http://feeds.arstechnica.com/arstechnica/security"},
+    {"name": "Ars Technica — Security", "url": "https://feeds.arstechnica.com/arstechnica/security"},
     {"name": "Sky News — Technology", "url": "https://feeds.skynews.com/feeds/rss/technology.xml"},
     {"name": "Intruder.io Blog", "url": "https://www.intruder.io/blog/rss.xml"},  # URL à vérifier au déploiement
 ]
