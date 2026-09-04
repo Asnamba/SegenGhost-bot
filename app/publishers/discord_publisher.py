@@ -14,7 +14,10 @@ logger = logging.getLogger("segenghost.discord")
 
 
 def publish(payload: dict, mode: str = "digest") -> bool:
-    """Envoie par webhook si configuré, sinon par bot Discord classique."""
+    """Envoie par bot si configuré, sinon par webhook Discord."""
+    if discord_bot.is_configured():
+        return discord_bot.publish(payload, mode=mode)
+
     webhook_url = (
         settings.discord_webhook_urgent if mode == "urgent" else settings.discord_webhook_digest
     )
@@ -25,9 +28,6 @@ def publish(payload: dict, mode: str = "digest") -> bool:
             timeout=settings.http_timeout_seconds,
             safe_label=f"discord:{mode}",
         )
-
-    if discord_bot.is_configured():
-        return discord_bot.publish(payload, mode=mode)
 
     logger.warning("Aucun webhook ou bot Discord configuré pour '%s'.", mode)
     return False

@@ -77,13 +77,15 @@ def test_telegram_publish_returns_false_when_not_configured(monkeypatch):
     assert telegram_publisher.publish_to_channel("test") is False
 
 
-def test_discord_webhook_has_priority_over_bot(monkeypatch):
+def test_discord_bot_has_priority_over_webhook(monkeypatch):
     monkeypatch.setattr(discord_publisher.settings, "discord_webhook_urgent", "https://discord.test/webhook")
+    monkeypatch.setattr(discord_publisher.settings, "discord_token", "bot-token")
+    monkeypatch.setattr(discord_publisher.settings, "discord_channel_urgent_id", "123456")
     with patch.object(discord_publisher, "post_with_retry", return_value=True) as webhook, \
-         patch.object(discord_bot, "publish") as bot:
+         patch.object(discord_bot, "publish", return_value=True) as bot:
         assert discord_publisher.publish({"embeds": []}, mode="urgent") is True
-    webhook.assert_called_once()
-    bot.assert_not_called()
+    bot.assert_called_once_with({"embeds": []}, mode="urgent")
+    webhook.assert_not_called()
 
 
 def test_discord_bot_is_used_when_webhook_is_absent(monkeypatch):
@@ -95,9 +97,38 @@ def test_discord_bot_is_used_when_webhook_is_absent(monkeypatch):
     bot.assert_called_once_with({"embeds": []}, mode="digest")
 
 
+def test_discord_webhook_is_fallback_when_bot_is_absent(monkeypatch):
+    monkeypatch.setattr(discord_publisher.settings, "discord_token", "")
+    monkeypatch.setattr(discord_publisher.settings, "discord_webhook_digest", "https://discord.test/webhook")
+    with patch.object(discord_publisher, "post_with_retry", return_value=True) as webhook:
+        assert discord_publisher.publish({"embeds": []}, mode="digest") is True
+    webhook.assert_called_once()
+
+
 def test_discord_bot_channel_overrides_default(monkeypatch):
     monkeypatch.setattr(discord_bot.settings, "discord_token", "bot-token")
     monkeypatch.setattr(discord_bot.settings, "discord_channel_id", "100")
     monkeypatch.setattr(discord_bot.settings, "discord_channel_urgent_id", "200")
     assert discord_bot._channel_id("urgent") == 200
     assert discord_bot._channel_id("digest") == 100
+
+
+def test_discord_bot_enables_message_content_intent(monkeypatch):
+    monkeypatch.setattr(discord_bot.settings, "discord_token", "bot-token")
+    monkeypatch.setattr(discord_bot.settings, "discord_channel_id", "123456")
+    created_clients = []
+
+    class FakeThread:
+        def __init__(self, **kwargs):
+            created_clients.append(discord_bot._client)
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return True
+
+    with patch.object(discord_bot.threading, "Thread", FakeThread):
+        assert discord_bot.start() is True
+
+    assert discord_bot._client.intents.message_content is True

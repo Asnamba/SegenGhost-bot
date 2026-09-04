@@ -70,6 +70,7 @@ def start() -> bool:
             return True
         intents = discord.Intents.none()
         intents.guilds = True
+        intents.message_content = True
         _client = _DiscordClient(intents=intents)
         _thread = threading.Thread(target=_run_client, name="discord-bot", daemon=True)
         _thread.start()

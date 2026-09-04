@@ -124,10 +124,11 @@ d'exception ; Discord suffit pour publier les urgences et les digests.
 
 Discord accepte deux modes indépendants :
 
-- si le webhook du mode demandé est renseigné, il est utilisé en priorité ;
-- sinon, si `DISCORD_TOKEN` et un ID de salon sont renseignés, le bot classique
-  `discord.py` publie dans le salon ;
-- les deux modes peuvent être configurés simultanément pour garder un repli.
+- si `DISCORD_TOKEN` et un ID de salon sont renseignés, le bot classique
+  `discord.py` publie dans le salon en priorité ;
+- sinon, si le webhook du mode demandé est renseigné, il est utilisé comme
+  fallback ;
+- les deux modes peuvent être configurés simultanément, le bot restant prioritaire.
 
 Pour le mode bot, créer une application dans le [Discord Developer Portal](https://discord.com/developers/applications),
 ajouter un bot, copier son token dans `DISCORD_TOKEN`, puis inviter le bot sur
