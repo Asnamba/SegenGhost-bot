@@ -21,11 +21,17 @@ services:
       - key: SCHEDULER_ENABLED
         value: "true"
       - key: DISCORD_WEBHOOK_URGENT
-        sync: false
+        value: ""
       - key: DISCORD_WEBHOOK_DIGEST
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
+        value: ""
+      - key: DISCORD_TOKEN
+        value: ""
+      - key: DISCORD_CHANNEL_ID
+        value: ""
+      - key: DISCORD_CHANNEL_URGENT_ID
+        value: ""
+      - key: DISCORD_CHANNEL_DIGEST_ID
+        value: ""
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY

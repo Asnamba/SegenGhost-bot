@@ -30,6 +30,9 @@ pip install -r requirements.txt
 | Variable | Description |
 | `DATABASE_URL` | SQLite par défaut ; passer à une URL PostgreSQL en production |
 | `DISCORD_WEBHOOK_URGENT` / `DISCORD_WEBHOOK_DIGEST` | Webhooks Discord (Paramètres du salon > Intégrations) |
+| `DISCORD_TOKEN` | Token du bot Discord classique, optionnel si les webhooks sont utilisés |
+| `DISCORD_CHANNEL_ID` | ID de salon par défaut du bot Discord |
+| `DISCORD_CHANNEL_URGENT_ID` / `DISCORD_CHANNEL_DIGEST_ID` | IDs de salons spécifiques, prioritaires sur `DISCORD_CHANNEL_ID` |
 | `TELEGRAM_BOT_TOKEN` | Token obtenu via @BotFather |
 | `TELEGRAM_CHANNEL_CHAT_ID` | ID du canal public SegenGhost Security |
 | `TELEGRAM_ADMIN_CHAT_ID` | ID du chat privé admin (notifications push + relai WhatsApp) |
@@ -118,6 +121,20 @@ Variables minimales pour cette phase Discord seul :
 Les variables Telegram peuvent rester absentes ou vides. Le code les signale
 par avertissement et les publishers Telegram retournent `False` sans lever
 d'exception ; Discord suffit pour publier les urgences et les digests.
+
+Discord accepte deux modes indépendants :
+
+- si le webhook du mode demandé est renseigné, il est utilisé en priorité ;
+- sinon, si `DISCORD_TOKEN` et un ID de salon sont renseignés, le bot classique
+  `discord.py` publie dans le salon ;
+- les deux modes peuvent être configurés simultanément pour garder un repli.
+
+Pour le mode bot, créer une application dans le [Discord Developer Portal](https://discord.com/developers/applications),
+ajouter un bot, copier son token dans `DISCORD_TOKEN`, puis inviter le bot sur
+le serveur avec les permissions `View Channel` et `Send Messages` (et
+`Embed Links` pour les embeds). Activer le scope `bot`, sans activer
+`Message Content Intent`, qui n'est pas utilisé par ce projet. Copier les IDs
+des salons après avoir activé le mode développeur Discord.
 
 Pour obtenir une clé Gemini, ouvrir [Google AI Studio](https://aistudio.google.com/apikey),
 se connecter avec un compte Google, créer une clé API et la copier dans

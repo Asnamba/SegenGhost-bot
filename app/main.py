@@ -5,6 +5,7 @@ Démarre l'API FastAPI (utile pour la supervision et le déclenchement manuel)
 ainsi que le scheduler de tâches automatiques (collecte + digests).
 """
 import logging
+from secrets import compare_digest
 
 from fastapi import FastAPI, BackgroundTasks, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +17,7 @@ from app.config import settings, validate_config
 from app.database import init_db, get_session
 from app.scheduler import start_scheduler, stop_scheduler
 from app.pipeline import run_collect_and_urgent, run_digest
+from app.publishers import discord_bot
 from app.web.routes import router as dashboard_router
 
 configure_logging()
@@ -30,6 +32,7 @@ app.include_router(dashboard_router)
 def on_startup():
     validate_config()
     init_db()
+    discord_bot.start()
     if settings.scheduler_enabled:
         start_scheduler()
     logger.info("SegenGhost Security démarré.")
@@ -38,6 +41,7 @@ def on_startup():
 @app.on_event("shutdown")
 def on_shutdown():
     stop_scheduler()
+    discord_bot.stop()
     logger.info("SegenGhost Security arrêté.")
 
 

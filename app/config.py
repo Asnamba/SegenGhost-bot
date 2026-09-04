@@ -24,6 +24,10 @@ class Settings:
     # --- Discord ---
     discord_webhook_urgent: str = os.getenv("DISCORD_WEBHOOK_URGENT", "")
     discord_webhook_digest: str = os.getenv("DISCORD_WEBHOOK_DIGEST", "")
+    discord_token: str = os.getenv("DISCORD_TOKEN", "")
+    discord_channel_id: str = os.getenv("DISCORD_CHANNEL_ID", "")
+    discord_channel_urgent_id: str = os.getenv("DISCORD_CHANNEL_URGENT_ID", "")
+    discord_channel_digest_id: str = os.getenv("DISCORD_CHANNEL_DIGEST_ID", "")
 
     # --- Telegram ---
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -87,8 +91,14 @@ def validate_config() -> List[str]:
     if not settings.dashboard_username or not settings.dashboard_password:
         warnings.append("DASHBOARD_USERNAME/PASSWORD manquants — le dashboard reste accessible sans authentification.")
 
-    if not settings.discord_webhook_urgent and not settings.discord_webhook_digest:
-        warnings.append("Aucun webhook Discord configuré — publication Discord désactivée.")
+    webhook_configured = settings.discord_webhook_urgent or settings.discord_webhook_digest
+    bot_configured = settings.discord_token and (
+        settings.discord_channel_id
+        or settings.discord_channel_urgent_id
+        or settings.discord_channel_digest_id
+    )
+    if not webhook_configured and not bot_configured:
+        warnings.append("Aucun webhook ou bot Discord configuré — publication Discord désactivée.")
 
     if not settings.telegram_bot_token:
         warnings.append("TELEGRAM_BOT_TOKEN manquant — publication Telegram désactivée.")
