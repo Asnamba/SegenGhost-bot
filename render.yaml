@@ -38,6 +38,12 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash-lite
+      - key: GROQ_API_KEY
+        value: ""
+      - key: MISTRAL_API_KEY
+        value: ""
+      - key: AI_PROVIDER_PRIORITY
+        value: groq,gemini,mistral
       - key: AI_MODEL
         value: claude-sonnet-4-6
       - key: AI_MAX_RETRIES

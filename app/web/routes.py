@@ -5,32 +5,14 @@ correspondante, utilisée pour les intégrations externes ou un futur frontend e
 from datetime import datetime
 from typing import Optional
 
-from secrets import compare_digest
-
-from fastapi import APIRouter, Request, Query, HTTPException, Depends
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from app.config import settings
 from app.database import get_session
 from app.web.history import search_articles, get_article_by_id, get_stats
 
-security = HTTPBasic(auto_error=False)
-
-
-def require_dashboard_auth(credentials: HTTPBasicCredentials | None = Depends(security)):
-    if not settings.dashboard_username or not settings.dashboard_password:
-        return
-    if credentials is None or not compare_digest(credentials.username, settings.dashboard_username) or not compare_digest(credentials.password, settings.dashboard_password):
-        raise HTTPException(
-            status_code=401,
-            detail="Authentification requise.",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-
-router = APIRouter(dependencies=[Depends(require_dashboard_auth)])
+router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 

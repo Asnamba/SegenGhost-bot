@@ -12,14 +12,16 @@ Isolation des erreurs : chaque article est traité indépendamment. Une erreur
 sur UN article (IA, formatage, DB) est journalisée et n'empêche jamais le
 traitement des articles suivants dans le même cycle.
 """
+import asyncio
 import logging
+import time
 
 from app.database import get_session, Article, PublishedAlert
 from app.collectors.rss_collector import collect_all
 from app.processing.dedup import filter_new_entries
 from app.processing.classifier import classify
 from app.config import settings
-from app.ai.rewriter import rewrite_urgent, rewrite_digest_item
+from app.ai.rewriter import rewrite_urgent, rewrite_digest_item, rewrite_article_async
 from app.publishers.formatter import (
     build_discord_embed,
     build_telegram_message,
@@ -29,6 +31,33 @@ from app.publishers.formatter import (
 from app.publishers import discord_publisher, telegram_publisher
 
 logger = logging.getLogger("segenghost.pipeline")
+AI_BATCH_SIZE = 5
+
+
+async def _rewrite_batch_async(articles, urgent: bool):
+    """Réécrit un lot en parallèle, borné pour respecter les free tiers."""
+    semaphore = asyncio.Semaphore(AI_BATCH_SIZE)
+    started = time.perf_counter()
+
+    async def rewrite_one(article):
+        async with semaphore:
+            try:
+                text = await rewrite_article_async(_article_to_dict(article), urgent=urgent)
+                return article.id, text
+            except Exception as exc:
+                logger.error("Article #%s : erreur IA isolée (%s).", article.id, type(exc).__name__)
+                return article.id, None
+
+    results = await asyncio.gather(*(rewrite_one(article) for article in articles))
+    elapsed = time.perf_counter() - started
+    logger.info("Lot de %d articles traités en %.1fs.", len(articles), elapsed)
+    return dict(results)
+
+
+def _rewrite_batch(articles, urgent: bool):
+    if not articles:
+        return {}
+    return asyncio.run(_rewrite_batch_async(articles, urgent=urgent))
 
 
 def _store_new_entries(session, entries):
@@ -86,7 +115,9 @@ def _article_to_dict(article: Article) -> dict:
     }
 
 
-def _publish_urgent(session, article: Article):
+def _publish_urgent(
+    session, article: Article, ai_text: str | None = None, rewrite_if_missing: bool = True
+):
     """
     Traite une alerte urgente de bout en bout. Toute exception ici est
     interceptée : elle ne doit jamais interrompre le traitement des autres
@@ -105,15 +136,20 @@ def _publish_urgent(session, article: Article):
     elif settings.ai_provider not in {"gemini", "anthropic"}:
         logger.info("Article #%s ignoré : fournisseur IA invalide (%s).", article.id, settings.ai_provider)
 
-    ai_text = rewrite_urgent(article_dict)
+    if ai_text is None and rewrite_if_missing:
+        ai_text = rewrite_urgent(article_dict)
     if ai_text is None:
+        ai_text = article.raw_summary or "non disponible"
+        logger.info("Article #%s : fallback vers le texte brut source.", article.id)
+    if not ai_text:
         logger.error(
-            "Article #%s non publié : rédaction IA indisponible ou validation factuelle échouée.",
+            "Article #%s non publié : aucun texte IA ou brut disponible.",
             article.id,
         )
         return
 
-    logger.info("Article #%s traité par IA : texte validé, publication Discord demandée.", article.id)
+    if article.raw_summary and ai_text != article.raw_summary:
+        logger.info("Article #%s traité par IA : texte validé, publication Discord demandée.", article.id)
 
     article.ai_rewritten_text = ai_text
 
@@ -183,9 +219,12 @@ def run_collect_and_urgent():
         if not urgent_articles:
             logger.info("Aucune urgence non publiée à traiter après ce cycle.")
 
+        ai_results = _rewrite_batch(urgent_articles, urgent=True)
         for article in urgent_articles:
             try:
-                _publish_urgent(session, article)
+                _publish_urgent(
+                    session, article, ai_text=ai_results.get(article.id), rewrite_if_missing=False
+                )
             except Exception as exc:
                 # Filet de sécurité ultime : ne jamais laisser un article
                 # bloquer le traitement des suivants dans la même liste.
@@ -258,30 +297,18 @@ def run_digest():
             return
 
         items_for_report = []
+        ai_results = _rewrite_batch(pending, urgent=False)
         for article in pending:
-            try:
-                article_dict = _article_to_dict(article)
-                ai_text = rewrite_digest_item(article_dict)
-                if ai_text is None:
-                    logger.warning(
-                        "Item digest #%s exclu (rédaction IA indisponible ou validation échouée).",
-                        article.id,
-                    )
-                    continue
-
-                article.ai_rewritten_text = ai_text
-                items_for_report.append({
-                    "title": article.title,
-                    "category": article.category,
-                    "region": article.region,
-                    "ai_text": ai_text,
-                })
-            except Exception as exc:
-                logger.error(
-                    "Item digest #%s ignoré suite à une erreur inattendue : %s",
-                    article.id, type(exc).__name__,
-                )
-                continue
+            ai_text = ai_results.get(article.id) or article.raw_summary or "non disponible"
+            if article.id not in ai_results or not ai_results.get(article.id):
+                logger.info("Item digest #%s : fallback vers le texte brut source.", article.id)
+            article.ai_rewritten_text = ai_text
+            items_for_report.append({
+                "title": article.title,
+                "category": article.category,
+                "region": article.region,
+                "ai_text": ai_text,
+            })
 
         if not items_for_report:
             logger.warning("Digest annulé : aucun item n'a passé la rédaction/validation IA.")

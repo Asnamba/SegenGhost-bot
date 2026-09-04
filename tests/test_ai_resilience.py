@@ -4,7 +4,8 @@ Aucun appel réseau réel : le client Anthropic est entièrement mocké.
 Vérifie la garantie centrale : une erreur d'API ne doit JAMAIS remonter
 comme exception jusqu'à l'appelant (le pipeline) — toujours un retour None.
 """
-from unittest.mock import patch, MagicMock
+import asyncio
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import anthropic
 import pytest
@@ -165,3 +166,28 @@ def test_gemini_validation_blocks_altered_facts(monkeypatch):
 
     with patch.object(rewriter, "_get_gemini_client", return_value=fake_client):
         assert rewriter.rewrite_digest_item(ARTICLE) is None
+
+
+def test_provider_priority_falls_back_to_next_provider(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider", "groq")
+    monkeypatch.setattr(rewriter.settings, "ai_provider_priority", "groq,gemini,mistral")
+    monkeypatch.setattr(rewriter.settings, "groq_api_key", "groq-key")
+    monkeypatch.setattr(rewriter.settings, "gemini_api_key", "gemini-key")
+    valid_text = "Alerte CVE-2026-99999 CVSS 9.4"
+    provider_call = AsyncMock(side_effect=[None, valid_text])
+
+    with patch.object(rewriter, "_call_provider_async", provider_call):
+        result = asyncio.run(rewriter.rewrite_article_async(ARTICLE, urgent=True))
+
+    assert result == valid_text
+    assert [call.args[0] for call in provider_call.call_args_list] == ["groq", "gemini"]
+
+
+def test_all_provider_failures_return_none_without_raising(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider_priority", "groq,gemini,mistral")
+    monkeypatch.setattr(rewriter.settings, "groq_api_key", "groq-key")
+    monkeypatch.setattr(rewriter.settings, "gemini_api_key", "gemini-key")
+    monkeypatch.setattr(rewriter.settings, "mistral_api_key", "mistral-key")
+
+    with patch.object(rewriter, "_call_provider_async", AsyncMock(return_value=None)):
+        assert asyncio.run(rewriter.rewrite_article_async(ARTICLE)) is None

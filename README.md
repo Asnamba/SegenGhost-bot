@@ -39,6 +39,9 @@ pip install -r requirements.txt
 | `AI_PROVIDER` | Fournisseur IA actif : `gemini` ou `anthropic` (Gemini par défaut) |
 | `GEMINI_API_KEY` | Clé API Gemini, nécessaire si `AI_PROVIDER=gemini` |
 | `GEMINI_MODEL` | Modèle Gemini, `gemini-2.5-flash-lite` par défaut |
+| `GROQ_API_KEY` | Clé Groq optionnelle, utilisée par le fallback prioritaire |
+| `MISTRAL_API_KEY` | Clé Mistral optionnelle, utilisée par le fallback |
+| `AI_PROVIDER_PRIORITY` | Ordre des providers, `groq,gemini,mistral` par défaut |
 | `ANTHROPIC_API_KEY` | Clé API Claude, nécessaire si `AI_PROVIDER=anthropic` |
 
 ## Lancement
@@ -155,6 +158,9 @@ Variables optionnelles, avec leurs valeurs par défaut :
 | Variable | Défaut |
 |---|---:|
 | `AI_MODEL` | `claude-sonnet-4-6` (utilisé par Anthropic) |
+| `GROQ_API_KEY` | vide |
+| `MISTRAL_API_KEY` | vide |
+| `AI_PROVIDER_PRIORITY` | `groq,gemini,mistral` |
 | `AI_MAX_RETRIES` | `2` |
 | `AI_TIMEOUT_SECONDS` | `30` |
 | `CVSS_URGENT_THRESHOLD` | `8.5` |

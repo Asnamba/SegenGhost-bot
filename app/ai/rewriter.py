@@ -12,11 +12,13 @@ retour None — jamais par une exception qui remonterait au pipeline. Un échec
 de rédaction pour UN article ne doit jamais interrompre le traitement des
 autres.
 """
+import asyncio
 import logging
 import time
 from typing import Dict, Optional
 
 import anthropic
+import httpx
 from google import genai
 from google.genai import types
 
@@ -27,6 +29,17 @@ logger = logging.getLogger("segenghost.ai")
 
 _client: Optional[anthropic.Anthropic] = None
 _gemini_client: Optional[genai.Client] = None
+
+PROVIDER_MODELS = {
+    "groq": "llama-3.3-70b-versatile",
+    "mistral": "mistral-small-latest",
+}
+PROVIDER_KEYS = {
+    "groq": "groq_api_key",
+    "gemini": "gemini_api_key",
+    "mistral": "mistral_api_key",
+    "anthropic": "anthropic_api_key",
+}
 
 # Erreurs considérées comme transitoires : on retente avant d'abandonner.
 _RETRYABLE_EXCEPTIONS = (
@@ -101,19 +114,13 @@ def _validate_factual_integrity(article: Dict, generated_text: str) -> bool:
     return True
 
 
-def _call_ai(system_prompt: str, structured_input: str, max_tokens: int, label: str) -> Optional[str]:
+def _call_anthropic(system_prompt: str, structured_input: str, max_tokens: int, label: str) -> Optional[str]:
     """
     Appelle l'API avec retry/backoff sur erreurs transitoires.
     Retourne le texte généré, ou None si l'appel échoue définitivement —
     ce cas doit être traité par l'appelant comme "rien à publier", pas comme
     une erreur fatale.
     """
-    if settings.ai_provider == "gemini":
-        return _call_gemini(system_prompt, structured_input, max_tokens, label)
-    if settings.ai_provider != "anthropic":
-        logger.error("Fournisseur IA invalide [%s]", settings.ai_provider)
-        return None
-
     client = _get_client()
     if client is None:
         return None
@@ -159,6 +166,97 @@ def _call_ai(system_prompt: str, structured_input: str, max_tokens: int, label: 
         "Rédaction IA [%s] échouée définitivement après %d tentative(s) (%s)",
         label, settings.ai_max_retries + 1, last_exception_type,
     )
+    return None
+
+
+def _call_ai(system_prompt: str, structured_input: str, max_tokens: int, label: str) -> Optional[str]:
+    if settings.ai_provider == "gemini":
+        return _call_gemini(system_prompt, structured_input, max_tokens, label)
+    if settings.ai_provider == "anthropic":
+        return _call_anthropic(system_prompt, structured_input, max_tokens, label)
+    logger.error("Fournisseur IA invalide [%s]", settings.ai_provider)
+    return None
+
+
+async def _call_openai_compatible(
+    provider: str,
+    api_key: str,
+    system_prompt: str,
+    structured_input: str,
+    max_tokens: int,
+    label: str,
+) -> Optional[str]:
+    endpoints = {
+        "groq": "https://api.groq.com/openai/v1/chat/completions",
+        "mistral": "https://api.mistral.ai/v1/chat/completions",
+    }
+    payload = {
+        "model": PROVIDER_MODELS[provider],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": structured_input},
+        ],
+        "max_tokens": max_tokens,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=settings.ai_timeout_seconds) as client:
+            response = await client.post(
+                endpoints[provider],
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+            )
+            if response.status_code in {408, 429, 500, 502, 503, 504}:
+                logger.warning("Rédaction IA [%s] indisponible (%s).", label, response.status_code)
+                return None
+            response.raise_for_status()
+            data = response.json()
+            text = data.get("choices", [{}])[0].get("message", {}).get("content")
+            return text.strip() if isinstance(text, str) and text.strip() else None
+    except Exception as exc:
+        logger.warning("Rédaction IA [%s] échouée (%s).", label, type(exc).__name__)
+        return None
+
+
+async def _call_provider_async(
+    provider: str, system_prompt: str, structured_input: str, max_tokens: int, label: str
+) -> Optional[str]:
+    api_key = getattr(settings, PROVIDER_KEYS[provider], "")
+    if not api_key:
+        logger.info("Fournisseur IA [%s] ignoré : clé API absente.", provider)
+        return None
+    if provider in {"groq", "mistral"}:
+        return await _call_openai_compatible(
+            provider, api_key, system_prompt, structured_input, max_tokens, label
+        )
+    # Les SDK Gemini/Anthropic restent synchrones ici, isolés dans un thread.
+    call = _call_gemini if provider == "gemini" else _call_anthropic
+    return await asyncio.to_thread(call, system_prompt, structured_input, max_tokens, label)
+
+
+async def rewrite_article_async(article: Dict, urgent: bool = False) -> Optional[str]:
+    """Réécrit un article avec fallback dans l'ordre des providers configurés."""
+    system_prompt = SYSTEM_PROMPT_URGENT if urgent else SYSTEM_PROMPT_DIGEST_ITEM
+    max_tokens = 500 if urgent else 250
+    structured_input = _build_structured_input(article)
+    priority = [
+        provider.strip().lower()
+        for provider in settings.ai_provider_priority.split(",")
+        if provider.strip().lower() in PROVIDER_KEYS
+    ]
+    if settings.ai_provider in PROVIDER_KEYS and settings.ai_provider not in priority:
+        priority.insert(0, settings.ai_provider)
+
+    for provider in priority:
+        generated_text = await _call_provider_async(
+            provider, system_prompt, structured_input, max_tokens, "urgent" if urgent else "digest"
+        )
+        if generated_text and _validate_factual_integrity(article, generated_text):
+            logger.info("Article réécrit avec succès par %s.", provider)
+            return generated_text
+        if generated_text:
+            logger.warning("Validation factuelle échouée avec %s, fallback suivant.", provider)
+
+    logger.warning("Tous les providers IA ont échoué pour l'article %s.", article.get("title", "inconnu"))
     return None
 
 
@@ -210,25 +308,9 @@ def _call_gemini(system_prompt: str, structured_input: str, max_tokens: int, lab
 
 def rewrite_urgent(article: Dict) -> Optional[str]:
     """Génère le texte d'une alerte urgente. Retourne None si l'appel ou la validation échoue."""
-    structured_input = _build_structured_input(article)
-    generated_text = _call_ai(SYSTEM_PROMPT_URGENT, structured_input, max_tokens=500, label="urgent")
-
-    if generated_text is None:
-        return None
-    if not _validate_factual_integrity(article, generated_text):
-        return None
-
-    return generated_text
+    return asyncio.run(rewrite_article_async(article, urgent=True))
 
 
 def rewrite_digest_item(article: Dict) -> Optional[str]:
     """Génère le résumé court d'un item de digest. Retourne None si l'appel ou la validation échoue."""
-    structured_input = _build_structured_input(article)
-    generated_text = _call_ai(SYSTEM_PROMPT_DIGEST_ITEM, structured_input, max_tokens=250, label="digest")
-
-    if generated_text is None:
-        return None
-    if not _validate_factual_integrity(article, generated_text):
-        return None
-
-    return generated_text
+    return asyncio.run(rewrite_article_async(article, urgent=False))

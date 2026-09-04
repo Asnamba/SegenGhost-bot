@@ -8,6 +8,7 @@ Vérifie la garantie centrale demandée : si le traitement d'UN article échoue
 même traités.
 """
 from unittest.mock import patch
+import asyncio
 
 import pytest
 from sqlalchemy import create_engine
@@ -126,3 +127,21 @@ def test_publish_latest_raw_article_uses_ai_and_discord(memory_session, monkeypa
     stored_article = memory_session.query(Article).filter(Article.id == article_id).one()
     assert stored_article.ai_rewritten_text == "Résumé IA"
     assert stored_article.published is True
+
+
+def test_rewrite_batch_runs_all_articles_and_returns_results(monkeypatch):
+    articles = [
+        Article(id=index, title=f"Article {index}", source="RSS", source_url="https://example.org")
+        for index in range(1, 7)
+    ]
+
+    async def fake_rewrite(article, urgent=False):
+        await asyncio.sleep(0)
+        return f"Texte {article['title']}"
+
+    monkeypatch.setattr(pipeline, "rewrite_article_async", fake_rewrite)
+    results = pipeline._rewrite_batch(articles, urgent=True)
+
+    assert len(results) == 6
+    assert results[1] == "Texte Article 1"
+    assert results[6] == "Texte Article 6"

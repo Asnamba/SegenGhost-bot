@@ -38,6 +38,11 @@ class Settings:
     ai_provider: str = os.getenv("AI_PROVIDER", "gemini").strip().lower()
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    mistral_api_key: str = os.getenv("MISTRAL_API_KEY", "")
+    ai_provider_priority: str = os.getenv(
+        "AI_PROVIDER_PRIORITY", "groq,gemini,mistral"
+    )
     ai_model: str = os.getenv("AI_MODEL", "claude-sonnet-4-6")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
     ai_max_retries: int = int(os.getenv("AI_MAX_RETRIES", "2"))
@@ -79,12 +84,25 @@ def validate_config() -> List[str]:
     """
     warnings: List[str] = []
 
-    if settings.ai_provider not in {"gemini", "anthropic"}:
-        warnings.append("AI_PROVIDER invalide — utiliser 'gemini' ou 'anthropic'.")
-    elif settings.ai_provider == "gemini" and not settings.gemini_api_key:
-        warnings.append("GEMINI_API_KEY manquant — la rédaction IA échouera à l'exécution.")
-    elif settings.ai_provider == "anthropic" and not settings.anthropic_api_key:
-        warnings.append("ANTHROPIC_API_KEY manquant — la rédaction IA échouera à l'exécution.")
+    supported_providers = {"groq", "gemini", "mistral", "anthropic"}
+    if settings.ai_provider not in supported_providers:
+        warnings.append("AI_PROVIDER invalide — utiliser groq, gemini, mistral ou anthropic.")
+    configured_keys = {
+        "groq": settings.groq_api_key,
+        "gemini": settings.gemini_api_key,
+        "mistral": settings.mistral_api_key,
+        "anthropic": settings.anthropic_api_key,
+    }
+    priority_providers = [
+        provider.strip().lower()
+        for provider in settings.ai_provider_priority.split(",")
+        if provider.strip().lower() in supported_providers
+    ]
+    usable_provider = any(configured_keys.get(provider) for provider in priority_providers)
+    if not configured_keys.get(settings.ai_provider) and not usable_provider:
+        warnings.append(
+            "Aucune clé API IA configurée pour les fournisseurs prioritaires."
+        )
 
     if not settings.admin_api_token:
         warnings.append("ADMIN_API_TOKEN manquant — les endpoints de déclenchement restent désactivés.")
