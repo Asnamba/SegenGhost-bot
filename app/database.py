@@ -8,7 +8,7 @@ import logging
 from contextlib import contextmanager
 from datetime import datetime
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
@@ -54,6 +54,9 @@ class Article(Base):
     collected_at = Column(DateTime, default=datetime.utcnow)
     published = Column(Boolean, default=False)
     ai_rewritten_text = Column(Text, nullable=True)
+    status = Column(String(32), default="raw", nullable=False, index=True)
+    whatsapp_relayed = Column(Boolean, default=False, nullable=False, index=True)
+    whatsapp_relayed_at = Column(DateTime, nullable=True)
 
 
 class PublishedAlert(Base):
@@ -68,14 +71,48 @@ class PublishedAlert(Base):
     error_message = Column(Text, nullable=True)
 
 
+class AIUsage(Base):
+    __tablename__ = "ai_usage"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String(32), nullable=False, index=True)
+    success = Column(Boolean, nullable=False, default=False)
+    article_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    error_message = Column(String(255), nullable=True)
+
+
 def init_db():
     """Crée les tables si nécessaire. Une erreur ici est critique (le bot ne peut pas fonctionner sans base) — elle est journalisée puis propagée volontairement pour empêcher un démarrage silencieusement cassé."""
     try:
         Base.metadata.create_all(bind=engine)
+        _ensure_article_columns()
         logger.info("Base de données initialisée avec succès.")
     except Exception as exc:
         logger.critical("Échec d'initialisation de la base de données : %s", type(exc).__name__)
         raise
+
+
+def _ensure_article_columns():
+    """Migration additive minimale pour les bases SQLite/PostgreSQL existantes."""
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("articles")}
+    additions = {
+        "status": "VARCHAR(32) NOT NULL DEFAULT 'raw'",
+        "whatsapp_relayed": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "whatsapp_relayed_at": "TIMESTAMP NULL",
+    }
+    with engine.begin() as connection:
+        for name, definition in additions.items():
+            if name not in columns:
+                connection.execute(text(f"ALTER TABLE articles ADD COLUMN {name} {definition}"))
+        connection.execute(text(
+            "UPDATE articles SET status = 'published' WHERE published = TRUE AND status = 'raw'"
+        ))
+        connection.execute(text(
+            "UPDATE articles SET status = 'ai_processed' "
+            "WHERE published = FALSE AND ai_rewritten_text IS NOT NULL AND status = 'raw'"
+        ))
 
 
 def get_session():

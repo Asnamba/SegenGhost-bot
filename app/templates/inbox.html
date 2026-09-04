@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}SegenGhost Security - Inbox WhatsApp{% endblock %}
+{% block content %}
+<header class="masthead">
+  <p class="masthead__title">Boîte de réception CTI</p>
+  <p class="masthead__subtitle">Alertes IA prêtes à relayer manuellement vers WhatsApp</p>
+  <p><a class="back" href="/dashboard">Retour au dashboard</a></p>
+</header>
+<main class="list inbox-list">
+  {% if articles %}
+    {% for article in articles %}
+      <article class="inbox-item">
+        <div class="row__meta">
+          <span class="status-badge status-badge--info">Traité par IA</span>
+          <span>{{ article.source }}</span>
+          <span>{{ article.collected_at.strftime('%d/%m/%Y %H:%M') }}</span>
+        </div>
+        <h2>{{ article.title }}</h2>
+        <textarea class="inbox-text" readonly>{{ article.ai_rewritten_text }}</textarea>
+        <div class="inbox-actions">
+          <button type="button" onclick="navigator.clipboard.writeText(this.closest('.inbox-item').querySelector('.inbox-text').value)">Copier</button>
+          <form method="post" action="/dashboard/inbox/{{ article.id }}/relay">
+            <button type="submit">Marquer comme relayé</button>
+          </form>
+        </div>
+      </article>
+    {% endfor %}
+  {% else %}
+    <div class="empty">Aucune alerte prête à relayer.</div>
+  {% endif %}
+</main>
+{% endblock %}

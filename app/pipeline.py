@@ -15,11 +15,13 @@ traitement des articles suivants dans le même cycle.
 import asyncio
 import logging
 import time
+from datetime import datetime, timedelta
 
 from app.database import get_session, Article, PublishedAlert
 from app.collectors.rss_collector import collect_all
 from app.processing.dedup import filter_new_entries
 from app.processing.classifier import classify
+from app.processing.relevance import relevance_reason
 from app.config import settings
 from app.ai.rewriter import rewrite_urgent, rewrite_digest_item, rewrite_article_async
 from app.publishers.formatter import (
@@ -60,6 +62,31 @@ def _rewrite_batch(articles, urgent: bool):
     return asyncio.run(_rewrite_batch_async(articles, urgent=urgent))
 
 
+def cleanup_old_articles():
+    """Supprime les rejets anciens et les articles publiés/relayés anciens."""
+    session = get_session()
+    try:
+        now = datetime.utcnow()
+        rejected_before = now - timedelta(days=settings.rejected_retention_days)
+        published_before = now - timedelta(days=settings.published_retention_days)
+        rejected_count = session.query(Article).filter(
+            Article.status == "rejected_prefilter",
+            Article.collected_at < rejected_before,
+        ).delete(synchronize_session=False)
+        published_count = session.query(Article).filter(
+            Article.published.is_(True),
+            Article.whatsapp_relayed.is_(True),
+            Article.whatsapp_relayed_at < published_before,
+        ).delete(synchronize_session=False)
+        session.commit()
+        logger.info("Nettoyage base : %d rejets et %d articles publiés/relayés supprimés.", rejected_count, published_count)
+    except Exception as exc:
+        session.rollback()
+        logger.error("Nettoyage base échoué (%s).", type(exc).__name__)
+    finally:
+        session.close()
+
+
 def _store_new_entries(session, entries):
     """
     Persiste les nouvelles entrées. Un article dont la classification ou
@@ -69,6 +96,7 @@ def _store_new_entries(session, entries):
     for entry in entries:
         try:
             classified = classify(entry, settings.cvss_urgent_threshold)
+            rejection_reason = relevance_reason(classified)
             article = Article(
                 source=classified["source"],
                 source_url=classified["source_url"],
@@ -81,7 +109,10 @@ def _store_new_entries(session, entries):
                 category=classified.get("category"),
                 urgency=classified.get("urgency", "digest"),
                 region=classified.get("region"),
+                status="rejected_prefilter" if rejection_reason else "raw",
             )
+            if rejection_reason:
+                logger.info("Article rejeté avant IA : %s (%s).", classified["title"], rejection_reason)
             session.add(article)
             stored.append(article)
         except Exception as exc:
@@ -103,6 +134,7 @@ def _store_new_entries(session, entries):
 
 def _article_to_dict(article: Article) -> dict:
     return {
+        "id": article.id,
         "title": article.title,
         "source": article.source,
         "source_url": article.source_url,
@@ -138,6 +170,7 @@ def _publish_urgent(
 
     if ai_text is None and rewrite_if_missing:
         ai_text = rewrite_urgent(article_dict)
+    used_ai = ai_text is not None
     if ai_text is None:
         ai_text = article.raw_summary or "non disponible"
         logger.info("Article #%s : fallback vers le texte brut source.", article.id)
@@ -152,6 +185,7 @@ def _publish_urgent(
         logger.info("Article #%s traité par IA : texte validé, publication Discord demandée.", article.id)
 
     article.ai_rewritten_text = ai_text
+    article.status = "ai_processed" if used_ai else "raw"
 
     # Chaque canal est indépendant : l'échec de l'un n'empêche pas les autres.
     discord_payload = build_discord_embed(article_dict, ai_text)
@@ -174,6 +208,8 @@ def _publish_urgent(
         logger.info("Article #%s non publié sur Discord : publisher indisponible ou désactivé.", article.id)
 
     article.published = discord_ok or telegram_ok
+    if article.published:
+        article.status = "published"
     for channel, success in (
         ("discord", discord_ok),
         ("telegram_channel", telegram_ok),
@@ -205,7 +241,11 @@ def run_collect_and_urgent():
         urgent_articles = [a for a in stored_articles if a.urgency == "urgent" and not a.published]
         pending_urgent = (
             session.query(Article)
-            .filter(Article.urgency == "urgent", Article.published.is_(False))
+            .filter(
+                Article.urgency == "urgent",
+                Article.published.is_(False),
+                Article.status != "rejected_prefilter",
+            )
             .order_by(Article.collected_at.asc())
             .all()
         )
@@ -248,7 +288,10 @@ def publish_latest_raw_article() -> bool:
     try:
         article = (
             session.query(Article)
-            .filter(Article.published.is_(False))
+            .filter(
+                Article.published.is_(False),
+                Article.status != "rejected_prefilter",
+            )
             .order_by(Article.collected_at.desc(), Article.id.desc())
             .first()
         )
@@ -265,11 +308,13 @@ def publish_latest_raw_article() -> bool:
             return False
 
         article.ai_rewritten_text = ai_text
+        article.status = "ai_processed"
         payload = build_discord_embed(article_dict, ai_text)
         discord_ok = discord_publisher.publish(payload, mode=article.urgency or "digest")
         logger.info("Publication manuelle #%s : discord=%s.", article.id, discord_ok)
         if discord_ok:
             article.published = True
+            article.status = "published"
         session.commit()
         return discord_ok
     except Exception as exc:
@@ -286,7 +331,11 @@ def run_digest():
     try:
         pending = (
             session.query(Article)
-            .filter(Article.urgency == "digest", Article.published.is_(False))
+            .filter(
+                Article.urgency == "digest",
+                Article.published.is_(False),
+                Article.status != "rejected_prefilter",
+            )
             .order_by(Article.collected_at.desc())
             .limit(20)
             .all()
@@ -303,6 +352,7 @@ def run_digest():
             if article.id not in ai_results or not ai_results.get(article.id):
                 logger.info("Item digest #%s : fallback vers le texte brut source.", article.id)
             article.ai_rewritten_text = ai_text
+            article.status = "ai_processed"
             items_for_report.append({
                 "title": article.title,
                 "category": article.category,
@@ -331,6 +381,7 @@ def run_digest():
             for article in pending:
                 if article.ai_rewritten_text:
                     article.published = True
+                    article.status = "published"
                     for channel, success in (
                         ("discord", discord_ok),
                         ("telegram_channel", telegram_ok),

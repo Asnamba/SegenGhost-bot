@@ -136,8 +136,8 @@ Discord accepte deux modes indépendants :
 Pour le mode bot, créer une application dans le [Discord Developer Portal](https://discord.com/developers/applications),
 ajouter un bot, copier son token dans `DISCORD_TOKEN`, puis inviter le bot sur
 le serveur avec les permissions `View Channel` et `Send Messages` (et
-`Embed Links` pour les embeds). Activer le scope `bot`, sans activer
-`Message Content Intent`, qui n'est pas utilisé par ce projet. Copier les IDs
+`Embed Links` pour les embeds). Activer le scope `bot` et l'intent privilégié
+`Message Content Intent` dans le Developer Portal. Copier les IDs
 des salons après avoir activé le mode développeur Discord.
 
 Pour obtenir une clé Gemini, ouvrir [Google AI Studio](https://aistudio.google.com/apikey),
@@ -167,6 +167,8 @@ Variables optionnelles, avec leurs valeurs par défaut :
 | `COLLECT_INTERVAL_MINUTES` | `60` |
 | `HTTP_TIMEOUT_SECONDS` | `15` |
 | `RSS_FETCH_MAX_RETRIES` | `2` |
+| `REJECTED_RETENTION_DAYS` | `30` |
+| `PUBLISHED_RETENTION_DAYS` | `90` |
 | `LOG_LEVEL` | `INFO` |
 
 `PORT` est fourni automatiquement par Railway ou Render et ne doit pas être
@@ -183,13 +185,24 @@ coller de secrets dans le dépôt. Le dashboard et l'API sont protégés lorsque
 connectivité de la base, ce qui convient au contrôle automatique de Railway et
 Render.
 
-## Dashboard web (historique et recherche)
+## Dashboard web et boîte de réception
 
 Accessible sur `/dashboard` :
 - Statistiques globales (total, urgentes, digest)
 - Recherche texte (titre, CVE, contenu rédigé)
 - Filtres : catégorie, niveau d'urgence, zone géographique ciblée, plage de dates
 - Page de détail par alerte (`/dashboard/alert/{id}`) avec texte complet et lien vers la source officielle
+
+Le dashboard est protégé par HTTP Basic avec `DASHBOARD_USERNAME` et
+`DASHBOARD_PASSWORD`. La boîte de réception `/dashboard/inbox` liste les
+articles traités par IA et non encore relayés manuellement vers WhatsApp. Elle
+permet de copier le texte prêt à publier puis de cliquer sur **Marquer comme
+relayé**, sans dépendre de Telegram.
+
+Les articles rejetés par le pré-filtre sont conservés avec le statut
+`rejected_prefilter` et restent consultables via le filtre de statut. Les
+rejets sont nettoyés après `REJECTED_RETENTION_DAYS` jours ; seuls les articles
+publiés et déjà relayés sont nettoyés après `PUBLISHED_RETENTION_DAYS` jours.
 
 API JSON équivalente pour intégrations externes :
 - `GET /api/alerts` (mêmes filtres que le dashboard : `q`, `category`, `urgency`, `region`, `date_from`, `date_to`)

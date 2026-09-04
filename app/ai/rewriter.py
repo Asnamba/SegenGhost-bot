@@ -23,6 +23,7 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
+from app.database import AIUsage, get_session
 from app.ai.prompts import SYSTEM_PROMPT_URGENT, SYSTEM_PROMPT_DIGEST_ITEM
 
 logger = logging.getLogger("segenghost.ai")
@@ -40,6 +41,26 @@ PROVIDER_KEYS = {
     "mistral": "mistral_api_key",
     "anthropic": "anthropic_api_key",
 }
+
+
+def _record_usage(provider: str, article: Dict, success: bool, error_message: str | None = None):
+    article_id = article.get("id")
+    if article_id is None:
+        return
+    session = get_session()
+    try:
+        session.add(AIUsage(
+            provider=provider,
+            success=success,
+            article_id=article_id,
+            error_message=error_message[:255] if error_message else None,
+        ))
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.warning("Enregistrement usage IA impossible (%s).", type(exc).__name__)
+    finally:
+        session.close()
 
 # Erreurs considérées comme transitoires : on retente avant d'abandonner.
 _RETRYABLE_EXCEPTIONS = (
@@ -185,6 +206,7 @@ async def _call_openai_compatible(
     structured_input: str,
     max_tokens: int,
     label: str,
+    article: Dict,
 ) -> Optional[str]:
     endpoints = {
         "groq": "https://api.groq.com/openai/v1/chat/completions",
@@ -206,19 +228,23 @@ async def _call_openai_compatible(
                 json=payload,
             )
             if response.status_code in {408, 429, 500, 502, 503, 504}:
+                _record_usage(provider, article, False, f"HTTP {response.status_code}")
                 logger.warning("Rédaction IA [%s] indisponible (%s).", label, response.status_code)
                 return None
             response.raise_for_status()
             data = response.json()
             text = data.get("choices", [{}])[0].get("message", {}).get("content")
-            return text.strip() if isinstance(text, str) and text.strip() else None
+            result = text.strip() if isinstance(text, str) and text.strip() else None
+            _record_usage(provider, article, result is not None, "réponse vide" if result is None else None)
+            return result
     except Exception as exc:
+        _record_usage(provider, article, False, type(exc).__name__)
         logger.warning("Rédaction IA [%s] échouée (%s).", label, type(exc).__name__)
         return None
 
 
 async def _call_provider_async(
-    provider: str, system_prompt: str, structured_input: str, max_tokens: int, label: str
+    provider: str, system_prompt: str, structured_input: str, max_tokens: int, label: str, article: Dict
 ) -> Optional[str]:
     api_key = getattr(settings, PROVIDER_KEYS[provider], "")
     if not api_key:
@@ -226,11 +252,13 @@ async def _call_provider_async(
         return None
     if provider in {"groq", "mistral"}:
         return await _call_openai_compatible(
-            provider, api_key, system_prompt, structured_input, max_tokens, label
+            provider, api_key, system_prompt, structured_input, max_tokens, label, article
         )
     # Les SDK Gemini/Anthropic restent synchrones ici, isolés dans un thread.
     call = _call_gemini if provider == "gemini" else _call_anthropic
-    return await asyncio.to_thread(call, system_prompt, structured_input, max_tokens, label)
+    result = await asyncio.to_thread(call, system_prompt, structured_input, max_tokens, label)
+    _record_usage(provider, article, result is not None, "échec SDK" if result is None else None)
+    return result
 
 
 async def rewrite_article_async(article: Dict, urgent: bool = False) -> Optional[str]:
@@ -248,7 +276,8 @@ async def rewrite_article_async(article: Dict, urgent: bool = False) -> Optional
 
     for provider in priority:
         generated_text = await _call_provider_async(
-            provider, system_prompt, structured_input, max_tokens, "urgent" if urgent else "digest"
+            provider, system_prompt, structured_input, max_tokens,
+            "urgent" if urgent else "digest", article,
         )
         if generated_text and _validate_factual_integrity(article, generated_text):
             logger.info("Article réécrit avec succès par %s.", provider)

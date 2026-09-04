@@ -3,8 +3,8 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Article, Base
-from app.web.history import get_stats, search_articles
+from app.database import AIUsage, Article, Base
+from app.web.history import get_ai_usage_stats, get_inbox_articles, get_stats, search_articles
 
 
 def _session():
@@ -23,12 +23,14 @@ def test_dashboard_status_filters_and_stats_include_all_articles():
         Article(
             source="RSS", source_url="https://example.org/ai", title="IA",
             content_hash="ai", urgency="digest", ai_rewritten_text="Résumé IA",
+            status="ai_processed",
             collected_at=datetime.utcnow(),
         ),
         Article(
             source="RSS", source_url="https://example.org/published", title="Publié",
             content_hash="published", urgency="urgent", ai_rewritten_text="Alerte",
             published=True, collected_at=datetime.utcnow(),
+            status="published",
         ),
     ])
     session.commit()
@@ -43,4 +45,14 @@ def test_dashboard_status_filters_and_stats_include_all_articles():
     assert stats["ai_processed"] == 2
     assert stats["published"] == 1
     assert stats["urgent"] == 1
+    assert {article.title for article in get_inbox_articles(session)} == {"IA", "Publié"}
+    session.add_all([
+        AIUsage(provider="groq", success=True),
+        AIUsage(provider="groq", success=False),
+        AIUsage(provider="gemini", success=True),
+    ])
+    session.commit()
+    usage = get_ai_usage_stats(session)
+    assert usage["groq"] == {"success": 1, "failure": 1}
+    assert usage["gemini"] == {"success": 1, "failure": 0}
     session.close()

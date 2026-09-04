@@ -89,6 +89,18 @@ body {
 .stat--urgent .stat__value { color: var(--critical); }
 .stat--info .stat__value { color: var(--info); }
 .stat--success .stat__value { color: var(--ok); }
+
+.ai-usage {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+}
+
+.ai-usage strong { color: var(--text); }
 .stat--total .stat__value { color: var(--text); }
 
 /* ---- Filter bar ---- */
@@ -232,6 +244,28 @@ body {
   color: var(--text-muted);
   font-family: 'IBM Plex Mono', monospace;
 }
+
+.inbox-item {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.inbox-item h2 { margin: 10px 0; font-size: 17px; }
+.inbox-text {
+  display: block;
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+  background: var(--panel-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 10px;
+  font: inherit;
+}
+.inbox-actions { display: flex; gap: 10px; margin-top: 12px; }
+.inbox-actions button { padding: 8px 12px; cursor: pointer; }
 
 /* ---- Detail page ---- */
 .detail {

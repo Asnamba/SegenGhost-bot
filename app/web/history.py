@@ -4,7 +4,7 @@ Fournit des fonctions de requête réutilisables par le dashboard web et l'API,
 pour consulter les publications passées avec filtres (texte, catégorie,
 urgence, région, dates).
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
 from sqlalchemy import or_
@@ -54,6 +54,8 @@ def search_articles(
         q = q.filter(Article.published.is_(False), Article.ai_rewritten_text.isnot(None))
     elif status == "raw":
         q = q.filter(Article.ai_rewritten_text.is_(None))
+    elif status == "rejected_prefilter":
+        q = q.filter(Article.status == "rejected_prefilter")
 
     if region:
         q = q.filter(Article.region == region)
@@ -108,3 +110,33 @@ def get_stats(session: Session) -> Dict:
         "regions": sorted({r[0] for r in regions}),
         "categories": sorted({c[0] for c in categories}),
     }
+
+
+def get_ai_usage_stats(session: Session) -> Dict:
+    """Retourne les succès/échecs IA des 30 derniers jours par fournisseur."""
+    from app.database import AIUsage
+
+    since = datetime.utcnow() - timedelta(days=30)
+    rows = session.query(AIUsage).filter(AIUsage.created_at >= since).all()
+    stats = {
+        provider: {"success": 0, "failure": 0}
+        for provider in ("groq", "gemini", "mistral", "anthropic")
+    }
+    for row in rows:
+        stats.setdefault(row.provider, {"success": 0, "failure": 0})
+        stats[row.provider]["success" if row.success else "failure"] += 1
+    return stats
+
+
+def get_inbox_articles(session: Session) -> List[Article]:
+    """Articles pertinents rédigés par IA et non encore relayés."""
+    return (
+        session.query(Article)
+        .filter(
+            Article.status.in_(("ai_processed", "published")),
+            Article.ai_rewritten_text.isnot(None),
+            Article.whatsapp_relayed.is_(False),
+        )
+        .order_by(Article.collected_at.desc())
+        .all()
+    )

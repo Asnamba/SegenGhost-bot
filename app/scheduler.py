@@ -22,7 +22,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.config import settings
-from app.pipeline import run_collect_and_urgent, run_digest
+from app.pipeline import cleanup_old_articles, run_collect_and_urgent, run_digest
 
 logger = logging.getLogger("segenghost.scheduler")
 
@@ -66,6 +66,14 @@ def start_scheduler():
             id=f"digest_{time_str}",
             replace_existing=True,
         )
+
+    scheduler.add_job(
+        cleanup_old_articles,
+        "interval",
+        hours=24,
+        id="cleanup_articles",
+        replace_existing=True,
+    )
 
     scheduler.start()
     collection_schedule = (

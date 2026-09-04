@@ -60,6 +60,8 @@ class Settings:
     # --- Réseau / résilience ---
     http_timeout_seconds: float = float(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))
     rss_fetch_max_retries: int = int(os.getenv("RSS_FETCH_MAX_RETRIES", "2"))
+    rejected_retention_days: int = int(os.getenv("REJECTED_RETENTION_DAYS", "30"))
+    published_retention_days: int = int(os.getenv("PUBLISHED_RETENTION_DAYS", "90"))
 
     # --- Logging ---
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

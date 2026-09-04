@@ -5,14 +5,28 @@ correspondante, utilisée pour les intégrations externes ou un futur frontend e
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse
+from secrets import compare_digest
+
+from fastapi import APIRouter, Request, Query, HTTPException, Depends
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from app.database import get_session
-from app.web.history import search_articles, get_article_by_id, get_stats
+from app.config import settings
+from app.database import Article, get_session
+from app.web.history import get_ai_usage_stats, get_inbox_articles, search_articles, get_article_by_id, get_stats
 
-router = APIRouter()
+security = HTTPBasic(auto_error=False)
+
+
+def require_dashboard_auth(credentials: HTTPBasicCredentials | None = Depends(security)):
+    if not settings.dashboard_username or not settings.dashboard_password:
+        raise HTTPException(status_code=503, detail="Dashboard non configuré : identifiants manquants.")
+    if credentials is None or not compare_digest(credentials.username, settings.dashboard_username) or not compare_digest(credentials.password, settings.dashboard_password):
+        raise HTTPException(status_code=401, detail="Authentification requise.", headers={"WWW-Authenticate": "Basic"})
+
+
+router = APIRouter(dependencies=[Depends(require_dashboard_auth)])
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -50,6 +64,7 @@ def dashboard(
             published_only=False,
         )
         stats = get_stats(session)
+        stats["ai_usage"] = get_ai_usage_stats(session)
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -76,6 +91,38 @@ def alert_detail(request: Request, article_id: int):
         return templates.TemplateResponse(
             "alert_detail.html", {"request": request, "article": article}
         )
+    finally:
+        session.close()
+
+
+@router.get("/dashboard/inbox", response_class=HTMLResponse)
+def dashboard_inbox(request: Request):
+    session = get_session()
+    try:
+        return templates.TemplateResponse(
+            "inbox.html",
+            {"request": request, "articles": get_inbox_articles(session)},
+        )
+    finally:
+        session.close()
+
+
+@router.post("/dashboard/inbox/{article_id}/relay")
+def mark_as_relayed(article_id: int):
+    session = get_session()
+    try:
+        article = session.query(Article).filter(
+            Article.id == article_id,
+            Article.status.in_(("ai_processed", "published")),
+            Article.ai_rewritten_text.isnot(None),
+            Article.whatsapp_relayed.is_(False),
+        ).first()
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article d'inbox introuvable.")
+        article.whatsapp_relayed = True
+        article.whatsapp_relayed_at = datetime.utcnow()
+        session.commit()
+        return RedirectResponse(url="/dashboard/inbox", status_code=303)
     finally:
         session.close()
 

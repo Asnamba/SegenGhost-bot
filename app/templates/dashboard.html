@@ -23,6 +23,13 @@
       <span class="stat__label">Alertes urgentes</span>
     </div>
   </div>
+  <p><a class="back" href="/dashboard/inbox">Boîte de réception WhatsApp</a></p>
+  <section class="ai-usage">
+    <strong>Usage IA - 30 derniers jours</strong>
+    {% for provider, usage in stats.ai_usage.items() %}
+      <span>{{ provider|capitalize }} : {{ usage.success }} succès / {{ usage.failure }} échecs</span>
+    {% endfor %}
+  </section>
 </header>
 
 <form class="filters" method="get" action="/dashboard">
@@ -39,6 +46,7 @@
     <option value="published" {% if filters.status == "published" %}selected{% endif %}>Publiés</option>
     <option value="ai" {% if filters.status == "ai" %}selected{% endif %}>Traités par IA</option>
     <option value="raw" {% if filters.status == "raw" %}selected{% endif %}>Brut / Non traités</option>
+    <option value="rejected_prefilter" {% if filters.status == "rejected_prefilter" %}selected{% endif %}>Rejetés avant IA</option>
   </select>
 
   <select name="category">
@@ -73,6 +81,8 @@
           {% for i in range(1, 6) %}
             {% if i <= ticks %}
               <span class="{{ 'on--critical' if score >= 8.5 else ('on--amber' if score >= 5 else 'on--ok') }}" style="height: {{ i * 4 }}px;"></span>
+            {% elif a.status == "rejected_prefilter" %}
+              <span class="status-badge status-badge--warning">Rejeté avant IA</span>
             {% else %}
               <span style="height: {{ i * 4 }}px;"></span>
             {% endif %}
