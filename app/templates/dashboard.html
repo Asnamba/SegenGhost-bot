@@ -25,7 +25,7 @@
   <input type="text" name="q" placeholder="Rechercher (titre, CVE...)" value="{{ filters.q or '' }}">
 
   <select name="urgency">
-    <option value="">Toute urgence</option>
+    <option value="" {% if not filters.urgency %}selected{% endif %}>Toutes les urgences</option>
     <option value="urgent" {% if filters.urgency == "urgent" %}selected{% endif %}>Urgent</option>
     <option value="digest" {% if filters.urgency == "digest" %}selected{% endif %}>Digest</option>
   </select>
@@ -48,6 +48,7 @@
   <input type="date" name="date_to" value="{{ filters.date_to or '' }}">
 
   <button type="submit">Filtrer</button>
+  <button type="button" onclick="window.location.href='/dashboard'">Réinitialiser</button>
 </form>
 
 <main class="list">

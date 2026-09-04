@@ -48,7 +48,7 @@ def dashboard(
     request: Request,
     q: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    urgency: Optional[str] = Query(None),
+    urgency: str = Query(""),
     region: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
