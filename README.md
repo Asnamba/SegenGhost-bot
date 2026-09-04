@@ -22,19 +22,21 @@ source venv/bin/activate        # Windows : venv\Scripts\activate
 pip install -r requirements.txt
 # PowerShell : Copy-Item .env.example .env
 # Linux/macOS : cp .env.example .env
-# Remplir .env avec vos tokens (Discord, Telegram, Anthropic)
+# Remplir .env avec vos tokens (Gemini ou Anthropic, Discord, Telegram)
 ```
 
 ## Configuration requise
 
 | Variable | Description |
-|---|---|
 | `DATABASE_URL` | SQLite par défaut ; passer à une URL PostgreSQL en production |
 | `DISCORD_WEBHOOK_URGENT` / `DISCORD_WEBHOOK_DIGEST` | Webhooks Discord (Paramètres du salon > Intégrations) |
 | `TELEGRAM_BOT_TOKEN` | Token obtenu via @BotFather |
 | `TELEGRAM_CHANNEL_CHAT_ID` | ID du canal public SegenGhost Security |
 | `TELEGRAM_ADMIN_CHAT_ID` | ID du chat privé admin (notifications push + relai WhatsApp) |
-| `ANTHROPIC_API_KEY` | Clé API pour la rédaction IA |
+| `AI_PROVIDER` | Fournisseur IA actif : `gemini` ou `anthropic` (Gemini par défaut) |
+| `GEMINI_API_KEY` | Clé API Gemini, nécessaire si `AI_PROVIDER=gemini` |
+| `GEMINI_MODEL` | Modèle Gemini, `gemini-2.5-flash-lite` par défaut |
+| `ANTHROPIC_API_KEY` | Clé API Claude, nécessaire si `AI_PROVIDER=anthropic` |
 
 ## Lancement
 
@@ -107,7 +109,9 @@ Variables minimales pour cette phase Discord seul :
 | `DASHBOARD_USERNAME` | `admin` | Utilisateur HTTP Basic du dashboard/API |
 | `DASHBOARD_PASSWORD` | `mot-de-passe-long-et-unique` | Mot de passe HTTP Basic |
 | `SCHEDULER_ENABLED` | `true` | Doit être `true` sur l'unique instance web |
-| `ANTHROPIC_API_KEY` | `sk-ant-...` | Rédaction IA |
+| `AI_PROVIDER` | `gemini` | Fournisseur IA actif |
+| `GEMINI_API_KEY` | `AIza...` | Rédaction IA Gemini |
+| `GEMINI_MODEL` | `gemini-2.5-flash-lite` | Modèle Gemini |
 | `DISCORD_WEBHOOK_URGENT` | `https://discord.com/api/webhooks/...` | Publication urgente |
 | `DISCORD_WEBHOOK_DIGEST` | `https://discord.com/api/webhooks/...` | Publication digest |
 
@@ -115,11 +119,24 @@ Les variables Telegram peuvent rester absentes ou vides. Le code les signale
 par avertissement et les publishers Telegram retournent `False` sans lever
 d'exception ; Discord suffit pour publier les urgences et les digests.
 
+Pour obtenir une clé Gemini, ouvrir [Google AI Studio](https://aistudio.google.com/apikey),
+se connecter avec un compte Google, créer une clé API et la copier dans
+`GEMINI_API_KEY`. Le niveau gratuit est généralement utilisable sans carte
+bancaire, selon le pays et le compte ; ses quotas de requêtes et de tokens
+sont limités et peuvent changer. Consultez [les limites de débit Gemini](https://ai.google.dev/gemini-api/docs/rate-limits)
+et le tableau d'utilisation AI Studio. Le dépassement des quotas peut provoquer
+des erreurs temporaires ou nécessiter une attente.
+
+Pour passer à Claude, définir `AI_PROVIDER=anthropic`, renseigner
+`ANTHROPIC_API_KEY` et conserver `AI_MODEL` avec le modèle Anthropic souhaité.
+La clé Gemini peut alors rester présente ou être supprimée ; elle n'est pas
+lue lorsque le fournisseur Anthropic est sélectionné.
+
 Variables optionnelles, avec leurs valeurs par défaut :
 
 | Variable | Défaut |
 |---|---:|
-| `AI_MODEL` | `claude-sonnet-4-6` |
+| `AI_MODEL` | `claude-sonnet-4-6` (utilisé par Anthropic) |
 | `AI_MAX_RETRIES` | `2` |
 | `AI_TIMEOUT_SECONDS` | `30` |
 | `CVSS_URGENT_THRESHOLD` | `8.5` |

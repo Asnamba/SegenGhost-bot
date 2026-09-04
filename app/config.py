@@ -31,8 +31,11 @@ class Settings:
     telegram_channel_chat_id: str = os.getenv("TELEGRAM_CHANNEL_CHAT_ID", "")
 
     # --- IA (rédaction contrôlée) ---
+    ai_provider: str = os.getenv("AI_PROVIDER", "gemini").strip().lower()
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     ai_model: str = os.getenv("AI_MODEL", "claude-sonnet-4-6")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
     ai_max_retries: int = int(os.getenv("AI_MAX_RETRIES", "2"))
     ai_timeout_seconds: float = float(os.getenv("AI_TIMEOUT_SECONDS", "30"))
 
@@ -72,7 +75,11 @@ def validate_config() -> List[str]:
     """
     warnings: List[str] = []
 
-    if not settings.anthropic_api_key:
+    if settings.ai_provider not in {"gemini", "anthropic"}:
+        warnings.append("AI_PROVIDER invalide — utiliser 'gemini' ou 'anthropic'.")
+    elif settings.ai_provider == "gemini" and not settings.gemini_api_key:
+        warnings.append("GEMINI_API_KEY manquant — la rédaction IA échouera à l'exécution.")
+    elif settings.ai_provider == "anthropic" and not settings.anthropic_api_key:
         warnings.append("ANTHROPIC_API_KEY manquant — la rédaction IA échouera à l'exécution.")
 
     if not settings.admin_api_token:

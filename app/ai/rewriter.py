@@ -17,6 +17,8 @@ import time
 from typing import Dict, Optional
 
 import anthropic
+from google import genai
+from google.genai import types
 
 from app.config import settings
 from app.ai.prompts import SYSTEM_PROMPT_URGENT, SYSTEM_PROMPT_DIGEST_ITEM
@@ -24,6 +26,7 @@ from app.ai.prompts import SYSTEM_PROMPT_URGENT, SYSTEM_PROMPT_DIGEST_ITEM
 logger = logging.getLogger("segenghost.ai")
 
 _client: Optional[anthropic.Anthropic] = None
+_gemini_client: Optional[genai.Client] = None
 
 # Erreurs considérées comme transitoires : on retente avant d'abandonner.
 _RETRYABLE_EXCEPTIONS = (
@@ -45,6 +48,19 @@ def _get_client() -> Optional[anthropic.Anthropic]:
             timeout=settings.ai_timeout_seconds,
         )
     return _client
+
+
+def _get_gemini_client() -> Optional[genai.Client]:
+    global _gemini_client
+    if not settings.gemini_api_key:
+        logger.error("GEMINI_API_KEY manquant — rédaction IA indisponible pour cet appel.")
+        return None
+    if _gemini_client is None:
+        _gemini_client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.ai_timeout_seconds * 1000)),
+        )
+    return _gemini_client
 
 
 def _build_structured_input(article: Dict) -> str:
@@ -92,6 +108,12 @@ def _call_ai(system_prompt: str, structured_input: str, max_tokens: int, label: 
     ce cas doit être traité par l'appelant comme "rien à publier", pas comme
     une erreur fatale.
     """
+    if settings.ai_provider == "gemini":
+        return _call_gemini(system_prompt, structured_input, max_tokens, label)
+    if settings.ai_provider != "anthropic":
+        logger.error("Fournisseur IA invalide [%s]", settings.ai_provider)
+        return None
+
     client = _get_client()
     if client is None:
         return None
@@ -135,6 +157,52 @@ def _call_ai(system_prompt: str, structured_input: str, max_tokens: int, label: 
 
     logger.error(
         "Rédaction IA [%s] échouée définitivement après %d tentative(s) (%s)",
+        label, settings.ai_max_retries + 1, last_exception_type,
+    )
+    return None
+
+
+def _is_gemini_retryable(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code in {408, 429, 500, 502, 503, 504}:
+        return True
+    return any(name in type(exc).__name__.lower() for name in ("timeout", "connection", "ratelimit", "server"))
+
+
+def _call_gemini(system_prompt: str, structured_input: str, max_tokens: int, label: str) -> Optional[str]:
+    """Appelle Gemini avec le même contrat de résilience que le chemin Anthropic."""
+    client = _get_gemini_client()
+    if client is None:
+        return None
+
+    last_exception_type = None
+    for attempt in range(1, settings.ai_max_retries + 2):
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=structured_input,
+                config=types.GenerateContentConfig(
+                    systemInstruction=system_prompt,
+                    maxOutputTokens=max_tokens,
+                ),
+            )
+            generated_text = getattr(response, "text", None)
+            return generated_text.strip() if generated_text else None
+        except Exception as exc:
+            last_exception_type = type(exc).__name__
+            if _is_gemini_retryable(exc) and attempt <= settings.ai_max_retries:
+                wait = 1.5 * (2 ** (attempt - 1))
+                logger.warning(
+                    "Rédaction IA Gemini [%s] : %s (tentative %d/%d), nouvelle tentative dans %.1fs",
+                    label, last_exception_type, attempt, settings.ai_max_retries + 1, wait,
+                )
+                time.sleep(wait)
+                continue
+            logger.error("Rédaction IA Gemini [%s] échouée : erreur (%s)", label, last_exception_type)
+            return None
+
+    logger.error(
+        "Rédaction IA Gemini [%s] échouée définitivement après %d tentative(s) (%s)",
         label, settings.ai_max_retries + 1, last_exception_type,
     )
     return None

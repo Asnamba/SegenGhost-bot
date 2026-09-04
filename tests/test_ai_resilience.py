@@ -37,8 +37,11 @@ def _fake_response(text: str):
 @pytest.fixture(autouse=True)
 def reset_client():
     rewriter._client = None
+    rewriter._gemini_client = None
+    rewriter.settings.ai_provider = "anthropic"
     yield
     rewriter._client = None
+    rewriter._gemini_client = None
 
 
 def test_rewrite_urgent_returns_none_when_no_api_key(monkeypatch):
@@ -111,3 +114,54 @@ def test_rewrite_digest_item_empty_response_is_rejected(monkeypatch):
         result = rewriter.rewrite_digest_item(ARTICLE)
 
     assert result is None
+
+
+def _fake_gemini_response(text: str):
+    response = MagicMock()
+    response.text = text
+    return response
+
+
+def test_gemini_success_path(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider", "gemini")
+    monkeypatch.setattr(rewriter.settings, "gemini_api_key", "fake-key")
+    valid_text = "ALERTE — CVE-2026-99999 — CVSS 9.4"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = _fake_gemini_response(valid_text)
+
+    with patch.object(rewriter, "_get_gemini_client", return_value=fake_client):
+        assert rewriter.rewrite_urgent(ARTICLE) == valid_text
+
+    call = fake_client.models.generate_content.call_args
+    assert call.kwargs["model"] == rewriter.settings.gemini_model
+    assert call.kwargs["config"].system_instruction
+
+
+def test_gemini_ignores_anthropic_key(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider", "gemini")
+    monkeypatch.setattr(rewriter.settings, "gemini_api_key", "")
+    monkeypatch.setattr(rewriter.settings, "anthropic_api_key", "")
+    with patch.object(rewriter, "_get_client") as anthropic_client:
+        assert rewriter.rewrite_urgent(ARTICLE) is None
+    anthropic_client.assert_not_called()
+
+
+def test_gemini_handles_transient_error_without_raising(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider", "gemini")
+    monkeypatch.setattr(rewriter.settings, "gemini_api_key", "fake-key")
+    monkeypatch.setattr(rewriter.settings, "ai_max_retries", 0)
+    fake_client = MagicMock()
+    fake_client.models.generate_content.side_effect = TimeoutError("simulated timeout")
+
+    with patch.object(rewriter, "_get_gemini_client", return_value=fake_client):
+        assert rewriter.rewrite_urgent(ARTICLE) is None
+
+
+def test_gemini_validation_blocks_altered_facts(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider", "gemini")
+    monkeypatch.setattr(rewriter.settings, "gemini_api_key", "fake-key")
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = _fake_gemini_response("Une faille critique a été détectée.")
+
+    with patch.object(rewriter, "_get_gemini_client", return_value=fake_client):
+        assert rewriter.rewrite_digest_item(ARTICLE) is None
