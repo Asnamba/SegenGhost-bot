@@ -94,6 +94,17 @@ def _publish_urgent(session, article: Article):
     """
     article_dict = _article_to_dict(article)
 
+    logger.info(
+        "Article #%s candidat à publication urgente : urgency=%s, published=%s, provider=%s.",
+        article.id, article.urgency, article.published, settings.ai_provider,
+    )
+    if settings.ai_provider == "gemini" and not settings.gemini_api_key:
+        logger.info("Article #%s ignoré : clé Gemini manquante (GEMINI_API_KEY).", article.id)
+    elif settings.ai_provider == "anthropic" and not settings.anthropic_api_key:
+        logger.info("Article #%s ignoré : clé Anthropic manquante (ANTHROPIC_API_KEY).", article.id)
+    elif settings.ai_provider not in {"gemini", "anthropic"}:
+        logger.info("Article #%s ignoré : fournisseur IA invalide (%s).", article.id, settings.ai_provider)
+
     ai_text = rewrite_urgent(article_dict)
     if ai_text is None:
         logger.error(
@@ -101,6 +112,8 @@ def _publish_urgent(session, article: Article):
             article.id,
         )
         return
+
+    logger.info("Article #%s traité par IA : texte validé, publication Discord demandée.", article.id)
 
     article.ai_rewritten_text = ai_text
 
@@ -119,6 +132,10 @@ def _publish_urgent(session, article: Article):
             "Article #%s : rédigé mais publié sur AUCUN canal (Discord et Telegram indisponibles).",
             article.id,
         )
+    elif discord_ok:
+        logger.info("Article #%s publié sur Discord avec succès.", article.id)
+    else:
+        logger.info("Article #%s non publié sur Discord : publisher indisponible ou désactivé.", article.id)
 
     article.published = discord_ok or telegram_ok
     for channel, success in (
@@ -149,11 +166,22 @@ def run_collect_and_urgent():
         new_entries = filter_new_entries(session, raw_entries)
         stored_articles = _store_new_entries(session, new_entries)
 
-        urgent_articles = [a for a in stored_articles if a.urgency == "urgent"]
-        logger.info(
-            "%d nouvel(le)s article(s) stocké(s), dont %d urgent(s).",
-            len(stored_articles), len(urgent_articles),
+        urgent_articles = [a for a in stored_articles if a.urgency == "urgent" and not a.published]
+        pending_urgent = (
+            session.query(Article)
+            .filter(Article.urgency == "urgent", Article.published.is_(False))
+            .order_by(Article.collected_at.asc())
+            .all()
         )
+        article_ids = {article.id for article in urgent_articles}
+        urgent_articles.extend(article for article in pending_urgent if article.id not in article_ids)
+        logger.info(
+            "%d nouvel(le)s article(s) stocké(s), %d urgent(s) nouveaux, %d urgent(s) en attente à traiter.",
+            len(stored_articles), len([a for a in stored_articles if a.urgency == "urgent"]), len(urgent_articles),
+        )
+
+        if not urgent_articles:
+            logger.info("Aucune urgence non publiée à traiter après ce cycle.")
 
         for article in urgent_articles:
             try:
@@ -173,6 +201,44 @@ def run_collect_and_urgent():
     finally:
         session.close()
         logger.info("Cycle de collecte terminé.")
+
+
+def publish_latest_raw_article() -> bool:
+    """Traite et publie sur Discord le dernier article brut non publié."""
+    session = get_session()
+    try:
+        article = (
+            session.query(Article)
+            .filter(Article.published.is_(False))
+            .order_by(Article.collected_at.desc(), Article.id.desc())
+            .first()
+        )
+        if article is None:
+            logger.info("Publication manuelle impossible : aucun article brut non publié.")
+            return False
+
+        logger.info("Publication manuelle demandée pour l'article brut #%s.", article.id)
+        article_dict = _article_to_dict(article)
+        rewrite = rewrite_urgent if article.urgency == "urgent" else rewrite_digest_item
+        ai_text = rewrite(article_dict)
+        if ai_text is None:
+            logger.info("Publication manuelle #%s ignorée : traitement IA indisponible ou invalide.", article.id)
+            return False
+
+        article.ai_rewritten_text = ai_text
+        payload = build_discord_embed(article_dict, ai_text)
+        discord_ok = discord_publisher.publish(payload, mode=article.urgency or "digest")
+        logger.info("Publication manuelle #%s : discord=%s.", article.id, discord_ok)
+        if discord_ok:
+            article.published = True
+        session.commit()
+        return discord_ok
+    except Exception as exc:
+        session.rollback()
+        logger.error("Publication manuelle échouée : %s", type(exc).__name__)
+        return False
+    finally:
+        session.close()
 
 
 def run_digest():

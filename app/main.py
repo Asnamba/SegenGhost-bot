@@ -16,7 +16,7 @@ from app.logging_config import configure_logging
 from app.config import settings, validate_config
 from app.database import init_db, get_session
 from app.scheduler import start_scheduler, stop_scheduler
-from app.pipeline import run_collect_and_urgent, run_digest
+from app.pipeline import publish_latest_raw_article, run_collect_and_urgent, run_digest
 from app.publishers import discord_bot
 from app.web.routes import router as dashboard_router
 
@@ -97,3 +97,11 @@ def trigger_digest(background_tasks: BackgroundTasks, authorization: str | None 
     _require_admin_token(authorization)
     background_tasks.add_task(run_digest)
     return {"status": "digest déclenché"}
+
+
+@app.post("/admin/publish-now")
+def publish_now(background_tasks: BackgroundTasks, authorization: str | None = Header(default=None)):
+    """Force le traitement IA et la publication Discord du dernier article brut."""
+    _require_admin_token(authorization)
+    background_tasks.add_task(publish_latest_raw_article)
+    return {"status": "publication manuelle déclenchée"}

@@ -102,3 +102,27 @@ def test_store_new_entries_skips_invalid_entry_but_keeps_others(memory_session):
 
     assert len(stored) == 1
     assert stored[0].content_hash == "hash-valide"
+
+
+def test_publish_latest_raw_article_uses_ai_and_discord(memory_session, monkeypatch):
+    article = Article(
+        source="TestSource",
+        source_url="https://example.org/raw",
+        title="Dernière alerte",
+        raw_summary="Résumé brut",
+        content_hash="hash-latest",
+        urgency="digest",
+    )
+    memory_session.add(article)
+    memory_session.commit()
+    article_id = article.id
+
+    monkeypatch.setattr(pipeline, "get_session", lambda: memory_session)
+    monkeypatch.setattr(pipeline, "rewrite_digest_item", lambda data: "Résumé IA")
+    monkeypatch.setattr(pipeline.discord_publisher, "publish", lambda payload, mode: True)
+
+    assert pipeline.publish_latest_raw_article() is True
+    memory_session.expire_all()
+    stored_article = memory_session.query(Article).filter(Article.id == article_id).one()
+    assert stored_article.ai_rewritten_text == "Résumé IA"
+    assert stored_article.published is True
