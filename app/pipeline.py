@@ -100,6 +100,7 @@ def _store_new_entries(session, entries):
             article = Article(
                 source=classified["source"],
                 source_url=classified["source_url"],
+                image_url=classified.get("image_url"),
                 title=classified["title"],
                 raw_summary=classified.get("raw_summary"),
                 content_hash=classified["content_hash"],
@@ -138,6 +139,7 @@ def _article_to_dict(article: Article) -> dict:
         "title": article.title,
         "source": article.source,
         "source_url": article.source_url,
+        "image_url": article.image_url,
         "cve_id": article.cve_id,
         "cvss_score": article.cvss_score,
         "exploited": article.exploited,
@@ -170,22 +172,17 @@ def _publish_urgent(
 
     if ai_text is None and rewrite_if_missing:
         ai_text = rewrite_urgent(article_dict)
-    used_ai = ai_text is not None
     if ai_text is None:
-        ai_text = article.raw_summary or "non disponible"
-        logger.info("Article #%s : fallback vers le texte brut source.", article.id)
-    if not ai_text:
         logger.error(
-            "Article #%s non publié : aucun texte IA ou brut disponible.",
+            "Article #%s non publié : tous les fournisseurs IA ont échoué ou la validation a bloqué la réponse.",
             article.id,
         )
         return
 
-    if article.raw_summary and ai_text != article.raw_summary:
-        logger.info("Article #%s traité par IA : texte validé, publication Discord demandée.", article.id)
+    logger.info("Article #%s traité par IA : texte validé, publication Discord demandée.", article.id)
 
     article.ai_rewritten_text = ai_text
-    article.status = "ai_processed" if used_ai else "raw"
+    article.status = "ai_processed"
 
     # Chaque canal est indépendant : l'échec de l'un n'empêche pas les autres.
     discord_payload = build_discord_embed(article_dict, ai_text)
@@ -348,9 +345,10 @@ def run_digest():
         items_for_report = []
         ai_results = _rewrite_batch(pending, urgent=False)
         for article in pending:
-            ai_text = ai_results.get(article.id) or article.raw_summary or "non disponible"
-            if article.id not in ai_results or not ai_results.get(article.id):
-                logger.info("Item digest #%s : fallback vers le texte brut source.", article.id)
+            ai_text = ai_results.get(article.id)
+            if not ai_text:
+                logger.info("Item digest #%s non publié : traitement IA indisponible ou invalide.", article.id)
+                continue
             article.ai_rewritten_text = ai_text
             article.status = "ai_processed"
             items_for_report.append({

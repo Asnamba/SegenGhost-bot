@@ -191,3 +191,10 @@ def test_all_provider_failures_return_none_without_raising(monkeypatch):
 
     with patch.object(rewriter, "_call_provider_async", AsyncMock(return_value=None)):
         assert asyncio.run(rewriter.rewrite_article_async(ARTICLE)) is None
+
+
+def test_every_provider_receives_french_system_prompt(monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "ai_provider_priority", "groq,gemini,mistral,anthropic")
+    for provider in ("groq", "gemini", "mistral", "anthropic"):
+        assert "en français" in rewriter.SYSTEM_PROMPT_URGENT
+        assert "en français" in rewriter.SYSTEM_PROMPT_DIGEST_ITEM

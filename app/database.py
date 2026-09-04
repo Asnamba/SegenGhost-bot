@@ -34,6 +34,7 @@ class Article(Base):
     id = Column(Integer, primary_key=True)
     source = Column(String(255), nullable=False)          # ex: "CISA", "Microsoft Security"
     source_url = Column(String(1024), nullable=False)
+    image_url = Column(String(2048), nullable=True)
     title = Column(String(1024), nullable=False)
     raw_summary = Column(Text, nullable=True)
     content_hash = Column(String(64), unique=True, index=True)  # anti-doublon
@@ -98,6 +99,7 @@ def _ensure_article_columns():
     inspector = inspect(engine)
     columns = {column["name"] for column in inspector.get_columns("articles")}
     additions = {
+        "image_url": "VARCHAR(2048) NULL",
         "status": "VARCHAR(32) NOT NULL DEFAULT 'raw'",
         "whatsapp_relayed": "BOOLEAN NOT NULL DEFAULT FALSE",
         "whatsapp_relayed_at": "TIMESTAMP NULL",

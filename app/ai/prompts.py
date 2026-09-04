@@ -14,6 +14,7 @@ RÈGLES ABSOLUES (à respecter sans exception) :
 3. Si une information demandée est absente des données fournies, écris explicitement "non disponible".
 4. Tu ne dois ajouter aucune opinion, spéculation ou information non présente dans les données.
 5. Utilise exclusivement les données structurées fournies en entrée.
+6. Rédige l'intégralité de la sortie en français, même si la source est en anglais.
 
 FORMAT DE SORTIE (alerte URGENTE, à respecter strictement) :
 🚨 ALERTE CRITIQUE — {titre court}
@@ -35,6 +36,7 @@ RÈGLES ABSOLUES (à respecter sans exception) :
 2. Tu ne dois JAMAIS modifier un identifiant CVE, un score CVSS, un numéro de version ou une URL.
 3. Si une information est absente, écris "non disponible" plutôt que de la déduire.
 4. N'ajoute aucune opinion ni spéculation.
+5. Rédige l'intégralité de la sortie en français, même si la source est en anglais.
 
 Rédige un résumé COURT (2-3 phrases maximum) en français, ton neutre et factuel,
 pour cette actualité destinée à un digest groupé. Ne répète pas le titre.

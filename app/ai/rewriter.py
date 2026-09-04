@@ -13,6 +13,7 @@ de rédaction pour UN article ne doit jamais interrompre le traitement des
 autres.
 """
 import asyncio
+from difflib import SequenceMatcher
 import logging
 import time
 from typing import Dict, Optional
@@ -119,6 +120,11 @@ def _validate_factual_integrity(article: Dict, generated_text: str) -> bool:
     """
     if not generated_text:
         logger.warning("Validation échouée : réponse IA vide.")
+        return False
+
+    source_text = (article.get("raw_summary") or "").strip()
+    if source_text and SequenceMatcher(None, source_text.lower(), generated_text.strip().lower()).ratio() >= 0.90:
+        logger.warning("Validation échouée : texte généré quasi identique au résumé source.")
         return False
 
     cve_id = article.get("cve_id")

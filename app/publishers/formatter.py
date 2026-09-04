@@ -28,6 +28,7 @@ def build_discord_embed(article: Dict, ai_text: str) -> Dict:
                     {"name": "Zone géographique", "value": article.get("region") or "Non spécifique", "inline": True},
                 ],
                 "url": article.get("source_url"),
+                **({"image": {"url": article["image_url"]}} if article.get("image_url") else {}),
                 "footer": {"text": "SegenGhost Security"},
                 "timestamp": datetime.utcnow().isoformat(),
             }

@@ -138,6 +138,7 @@ def _collect_source(source: Dict) -> List[Dict]:
             link = getattr(entry, "link", "").strip()
             summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
             published = getattr(entry, "published", None)
+            image_url = _extract_image_url(entry)
 
             if not title or not link:
                 continue
@@ -148,6 +149,7 @@ def _collect_source(source: Dict) -> List[Dict]:
             entries.append({
                 "source": name,
                 "source_url": link,
+                "image_url": image_url,
                 "title": title,
                 "raw_summary": summary,
                 "content_hash": _hash_entry(name, link, title),
@@ -160,6 +162,21 @@ def _collect_source(source: Dict) -> List[Dict]:
             continue
 
     return entries
+
+
+def _extract_image_url(entry) -> Optional[str]:
+    """Extrait uniquement une image déclarée nativement par le flux RSS/Atom."""
+    candidates = []
+    candidates.extend(getattr(entry, "media_content", []) or [])
+    candidates.extend(getattr(entry, "media_thumbnail", []) or [])
+    candidates.extend(getattr(entry, "enclosures", []) or [])
+    for candidate in candidates:
+        url = candidate.get("url") if hasattr(candidate, "get") else None
+        mime_type = candidate.get("type", "") if hasattr(candidate, "get") else ""
+        if url and (mime_type.startswith("image/") or "thumbnail" in str(candidate).lower() or not mime_type):
+            if _is_safe_url(url):
+                return url
+    return None
 
 
 def collect_all() -> List[Dict]:

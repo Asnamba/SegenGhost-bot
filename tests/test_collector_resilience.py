@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from app.collectors import rss_collector
+from app.publishers.formatter import build_discord_embed
 from app.collectors.sources import SOURCES
 
 
@@ -125,3 +126,25 @@ def test_configured_sources_use_updated_feed_urls():
     assert urls["Cisco Talos"] == "https://blog.talosintelligence.com/rss/"
     assert urls["CISA KEV"] == "https://www.cisa.gov/known-exploited-vulnerabilities-catalog.xml"
     assert urls["Microsoft Security"] == "https://api.msrc.microsoft.com/cvrf/v2.0/atom"
+
+
+def test_rss_native_image_is_carried_to_discord_embed():
+    article = {
+        "title": "Alerte",
+        "source": "RSS",
+        "source_url": "https://example.org/article",
+        "image_url": "https://cdn.example.org/image.jpg",
+        "urgency": "urgent",
+    }
+    payload = build_discord_embed(article, "Texte rédigé en français")
+    assert payload["embeds"][0]["image"]["url"] == article["image_url"]
+
+
+def test_discord_embed_has_no_image_without_rss_image():
+    article = {
+        "title": "Alerte",
+        "source": "RSS",
+        "source_url": "https://example.org/article",
+        "urgency": "urgent",
+    }
+    assert "image" not in build_discord_embed(article, "Texte rédigé en français")["embeds"][0]
