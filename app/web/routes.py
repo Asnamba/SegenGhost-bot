@@ -49,6 +49,7 @@ def dashboard(
     q: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     urgency: str = Query(""),
+    status: str = Query(""),
     region: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -60,9 +61,11 @@ def dashboard(
             query=q,
             category=category or None,
             urgency=urgency or None,
+            status=status or None,
             region=region or None,
             date_from=_parse_date(date_from),
             date_to=_parse_date(date_to),
+            published_only=False,
         )
         stats = get_stats(session)
         return templates.TemplateResponse(
@@ -72,7 +75,7 @@ def dashboard(
                 "articles": articles,
                 "stats": stats,
                 "filters": {
-                    "q": q, "category": category, "urgency": urgency,
+                    "q": q, "category": category, "urgency": urgency, "status": status,
                     "region": region, "date_from": date_from, "date_to": date_to,
                 },
             },
@@ -85,7 +88,7 @@ def dashboard(
 def alert_detail(request: Request, article_id: int):
     session = get_session()
     try:
-        article = get_article_by_id(session, article_id)
+        article = get_article_by_id(session, article_id, published_only=False)
         if not article:
             raise HTTPException(status_code=404, detail="Alerte introuvable.")
         return templates.TemplateResponse(
@@ -114,6 +117,7 @@ def api_alerts(
             query=q,
             category=category,
             urgency=urgency,
+            status=None,
             region=region,
             date_from=_parse_date(date_from),
             date_to=_parse_date(date_to),

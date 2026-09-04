@@ -18,6 +18,7 @@ def search_articles(
     query: Optional[str] = None,
     category: Optional[str] = None,
     urgency: Optional[str] = None,
+    status: Optional[str] = None,
     region: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
@@ -47,6 +48,13 @@ def search_articles(
     if urgency:
         q = q.filter(Article.urgency == urgency)
 
+    if status == "published":
+        q = q.filter(Article.published.is_(True))
+    elif status == "ai":
+        q = q.filter(Article.published.is_(False), Article.ai_rewritten_text.isnot(None))
+    elif status == "raw":
+        q = q.filter(Article.ai_rewritten_text.is_(None))
+
     if region:
         q = q.filter(Article.region == region)
 
@@ -73,29 +81,30 @@ def get_article_by_id(session: Session, article_id: int, published_only: bool = 
 
 def get_stats(session: Session) -> Dict:
     """Statistiques globales affichées en en-tête du dashboard."""
-    total = session.query(Article).filter(Article.published.is_(True)).count()
-    urgent = session.query(Article).filter(
-        Article.published.is_(True), Article.urgency == "urgent"
-    ).count()
-    digest = total - urgent
+    total = session.query(Article).count()
+    ai_processed = session.query(Article).filter(Article.ai_rewritten_text.isnot(None)).count()
+    published = session.query(Article).filter(Article.published.is_(True)).count()
+    urgent = session.query(Article).filter(Article.urgency == "urgent").count()
 
     regions = (
         session.query(Article.region)
-        .filter(Article.published.is_(True), Article.region.isnot(None))
+        .filter(Article.region.isnot(None))
         .distinct()
         .all()
     )
     categories = (
         session.query(Article.category)
-        .filter(Article.published.is_(True), Article.category.isnot(None))
+        .filter(Article.category.isnot(None))
         .distinct()
         .all()
     )
 
     return {
         "total": total,
+        "total_collected": total,
+        "ai_processed": ai_processed,
+        "published": published,
         "urgent": urgent,
-        "digest": digest,
         "regions": sorted({r[0] for r in regions}),
         "categories": sorted({c[0] for c in categories}),
     }

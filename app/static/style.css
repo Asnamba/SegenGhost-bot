@@ -87,7 +87,8 @@ body {
 }
 
 .stat--urgent .stat__value { color: var(--critical); }
-.stat--digest .stat__value { color: var(--info); }
+.stat--info .stat__value { color: var(--info); }
+.stat--success .stat__value { color: var(--ok); }
 .stat--total .stat__value { color: var(--text); }
 
 /* ---- Filter bar ---- */
@@ -207,6 +208,16 @@ body {
   border-radius: 2px;
   padding: 1px 6px;
 }
+
+.status-badge {
+  border-radius: 2px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+.status-badge--success { color: var(--ok); border-color: var(--ok); }
+.status-badge--info { color: var(--info); border-color: var(--info); }
+.status-badge--warning { color: var(--amber); border-color: var(--amber); }
 
 .row__aside {
   text-align: right;

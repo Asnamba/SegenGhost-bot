@@ -7,16 +7,20 @@
   <p class="masthead__subtitle">Poste de veille cybersécurité — historique des alertes</p>
   <div class="stats-row">
     <div class="stat stat--total">
-      <span class="stat__value">{{ stats.total }}</span>
-      <span class="stat__label">Alertes publiées</span>
+      <span class="stat__value">{{ stats.total_collected }}</span>
+      <span class="stat__label">Total collectés</span>
+    </div>
+    <div class="stat stat--info">
+      <span class="stat__value">{{ stats.ai_processed }}</span>
+      <span class="stat__label">Traités par IA</span>
+    </div>
+    <div class="stat stat--success">
+      <span class="stat__value">{{ stats.published }}</span>
+      <span class="stat__label">Publiés sur Discord</span>
     </div>
     <div class="stat stat--urgent">
       <span class="stat__value">{{ stats.urgent }}</span>
-      <span class="stat__label">Urgentes</span>
-    </div>
-    <div class="stat stat--digest">
-      <span class="stat__value">{{ stats.digest }}</span>
-      <span class="stat__label">Digest</span>
+      <span class="stat__label">Alertes urgentes</span>
     </div>
   </div>
 </header>
@@ -28,6 +32,13 @@
     <option value="" {% if not filters.urgency %}selected{% endif %}>Toutes les urgences</option>
     <option value="urgent" {% if filters.urgency == "urgent" %}selected{% endif %}>Urgent</option>
     <option value="digest" {% if filters.urgency == "digest" %}selected{% endif %}>Digest</option>
+  </select>
+
+  <select name="status">
+    <option value="" {% if not filters.status %}selected{% endif %}>Tous les statuts</option>
+    <option value="published" {% if filters.status == "published" %}selected{% endif %}>Publiés</option>
+    <option value="ai" {% if filters.status == "ai" %}selected{% endif %}>Traités par IA</option>
+    <option value="raw" {% if filters.status == "raw" %}selected{% endif %}>Brut / Non traités</option>
   </select>
 
   <select name="category">
@@ -70,6 +81,13 @@
         <div class="row__body">
           <div class="row__title">{{ a.title }}</div>
           <div class="row__meta">
+            {% if a.published %}
+              <span class="status-badge status-badge--success">Publié</span>
+            {% elif a.ai_rewritten_text %}
+              <span class="status-badge status-badge--info">Traité par IA</span>
+            {% else %}
+              <span class="status-badge status-badge--warning">Brut / En attente</span>
+            {% endif %}
             {% if a.cve_id %}<span class="tag mono">{{ a.cve_id }}</span>{% endif %}
             {% if a.cvss_score %}<span class="tag mono">CVSS {{ a.cvss_score }}</span>{% endif %}
             <span class="tag">{{ a.category or "général" }}</span>
