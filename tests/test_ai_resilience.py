@@ -5,6 +5,7 @@ Vérifie la garantie centrale : une erreur d'API ne doit JAMAIS remonter
 comme exception jusqu'à l'appelant (le pipeline) — toujours un retour None.
 """
 import asyncio
+import logging
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import anthropic
@@ -199,3 +200,36 @@ def test_every_provider_receives_french_system_prompt(monkeypatch):
     for provider in ("groq", "gemini", "mistral", "anthropic"):
         assert "en français" in rewriter.SYSTEM_PROMPT_URGENT
         assert "en français" in rewriter.SYSTEM_PROMPT_DIGEST_ITEM
+
+
+def test_openai_provider_logs_http_status_and_detail_without_secret(caplog, monkeypatch):
+    monkeypatch.setattr(rewriter.settings, "groq_api_key", "fake-groq-key")
+
+    class FakeResponse:
+        status_code = 401
+        text = '{"error":{"message":"invalid api key"}}'
+
+        def raise_for_status(self):
+            raise AssertionError("HTTP 401 doit être traité avant raise_for_status")
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    with caplog.at_level(logging.WARNING), patch.object(rewriter.httpx, "AsyncClient", return_value=FakeClient()):
+        result = asyncio.run(rewriter._call_provider_async(
+            "groq", "system", "input", 10, "test", ARTICLE
+        ))
+
+    assert result is None
+    message = " ".join(record.getMessage() for record in caplog.records)
+    assert "provider=groq" in message
+    assert "statut=401" in message
+    assert "invalid api key" in message
+    assert "fake-groq-key" not in message

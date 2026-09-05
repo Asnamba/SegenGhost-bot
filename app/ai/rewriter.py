@@ -45,6 +45,16 @@ PROVIDER_KEYS = {
 STRICT_PROVIDER_ORDER = ("gemini", "groq", "mistral", "anthropic")
 
 
+def _safe_error_detail(exc: Exception | str, limit: int = 240) -> str:
+    """Retourne un détail de diagnostic tronqué sans exposer de clé API."""
+    detail = str(exc)
+    for key_name in PROVIDER_KEYS.values():
+        secret = getattr(settings, key_name, "")
+        if secret:
+            detail = detail.replace(secret, "[REDACTED]")
+    return detail.replace("\n", " ")[:limit] or type(exc).__name__
+
+
 def _record_usage(provider: str, article: Dict, success: bool, error_message: str | None = None):
     article_id = article.get("id")
     if article_id is None:
@@ -183,14 +193,21 @@ def _call_anthropic(system_prompt: str, structured_input: str, max_tokens: int, 
 
         except anthropic.APIStatusError as exc:
             # Erreur non transitoire (ex. 400, 401, 403) — inutile de réessayer.
-            logger.error("Rédaction IA [%s] échouée : erreur API (statut %s)", label, exc.status_code)
+            detail = _safe_error_detail(exc)
+            logger.error(
+                "Rédaction IA provider=anthropic [%s] échouée : statut=%s détail=%s",
+                label, exc.status_code, detail,
+            )
             return None
 
         except Exception as exc:
             # Filet de sécurité : toute erreur imprévue ne doit jamais remonter
             # jusqu'au pipeline. On journalise le type d'erreur uniquement
             # (jamais la clé API, jamais le contenu brut de la requête).
-            logger.error("Rédaction IA [%s] échouée : erreur inattendue (%s)", label, type(exc).__name__)
+            logger.error(
+                "Rédaction IA provider=anthropic [%s] échouée : type=%s détail=%s",
+                label, type(exc).__name__, _safe_error_detail(exc),
+            )
             return None
 
     logger.error(
@@ -228,9 +245,13 @@ async def _call_openai_compatible(
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
             )
-            if response.status_code in {408, 429, 500, 502, 503, 504}:
-                _record_usage(provider, article, False, f"HTTP {response.status_code}")
-                logger.warning("Rédaction IA [%s] indisponible (%s).", label, response.status_code)
+            if response.status_code >= 400:
+                detail = _safe_error_detail(response.text)
+                _record_usage(provider, article, False, f"HTTP {response.status_code}: {detail}")
+                logger.warning(
+                    "Rédaction IA provider=%s [%s] échouée : statut=%s détail=%s",
+                    provider, label, response.status_code, detail,
+                )
                 return None
             response.raise_for_status()
             data = response.json()
@@ -239,8 +260,12 @@ async def _call_openai_compatible(
             _record_usage(provider, article, result is not None, "réponse vide" if result is None else None)
             return result
     except Exception as exc:
-        _record_usage(provider, article, False, type(exc).__name__)
-        logger.warning("Rédaction IA [%s] échouée (%s).", label, type(exc).__name__)
+        detail = _safe_error_detail(exc)
+        _record_usage(provider, article, False, f"{type(exc).__name__}: {detail}")
+        logger.warning(
+            "Rédaction IA provider=%s [%s] échouée : type=%s détail=%s",
+            provider, label, type(exc).__name__, detail,
+        )
         return None
 
 
@@ -249,7 +274,9 @@ async def _call_provider_async(
 ) -> Optional[str]:
     api_key = getattr(settings, PROVIDER_KEYS[provider], "")
     if not api_key:
-        logger.info("Fournisseur IA [%s] ignoré : clé API absente.", provider)
+        detail = "clé API absente"
+        _record_usage(provider, article, False, detail)
+        logger.warning("Rédaction IA provider=%s ignorée : %s.", provider, detail)
         return None
     if provider in {"groq", "mistral"}:
         return await _call_openai_compatible(
@@ -258,7 +285,12 @@ async def _call_provider_async(
     # Les SDK Gemini/Anthropic restent synchrones ici, isolés dans un thread.
     call = _call_gemini if provider == "gemini" else _call_anthropic
     result = await asyncio.to_thread(call, system_prompt, structured_input, max_tokens, label)
-    _record_usage(provider, article, result is not None, "échec SDK" if result is None else None)
+    _record_usage(
+        provider,
+        article,
+        result is not None,
+        None if result is not None else "SDK sans réponse",
+    )
     return result
 
 
@@ -335,7 +367,10 @@ def _call_gemini(system_prompt: str, structured_input: str, max_tokens: int, lab
                 )
                 time.sleep(wait)
                 continue
-            logger.error("Rédaction IA Gemini [%s] échouée : erreur (%s)", label, last_exception_type)
+            logger.error(
+                "Rédaction IA provider=gemini [%s] échouée : type=%s détail=%s",
+                label, last_exception_type, _safe_error_detail(exc),
+            )
             return None
 
     logger.error(
