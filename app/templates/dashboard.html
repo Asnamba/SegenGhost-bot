@@ -77,7 +77,7 @@
       {% set ticks = ((score / 10 * 5) | round(0, 'ceil') | int) if score else 0 %}
       <a class="row" href="/dashboard/alert/{{ a.id }}">
         <div class="row__bar row__bar--{{ a.urgency }}"></div>
-        <div class="meter" aria-hidden="true">
+        <div class="meter article-status-container" aria-hidden="true">
           {% for i in range(1, 6) %}
             {% if i <= ticks %}
               <span class="{{ 'on--critical' if score >= 8.5 else ('on--amber' if score >= 5 else 'on--ok') }}" style="height: {{ i * 4 }}px;"></span>

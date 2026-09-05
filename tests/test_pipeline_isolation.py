@@ -147,14 +147,15 @@ def test_rewrite_batch_runs_all_articles_and_returns_results(monkeypatch):
     assert results[6] == "Texte Article 6"
 
 
-def test_all_ai_failures_do_not_publish_raw_text(memory_session, monkeypatch):
+def test_all_ai_failures_publish_local_fallback(memory_session, monkeypatch):
     article = _make_urgent_article(memory_session, "CVE-2026-44444")
-    monkeypatch.setattr(pipeline, "rewrite_urgent", lambda data: None)
-    monkeypatch.setattr(pipeline.discord_publisher, "publish", lambda *args, **kwargs: pytest.fail("Discord ne doit pas être appelé"))
+    fallback = "Synthèse locale CVE-2026-44444 CVSS 9.5"
+    monkeypatch.setattr(pipeline, "rewrite_urgent", lambda data: fallback)
+    monkeypatch.setattr(pipeline.discord_publisher, "publish", lambda *args, **kwargs: True)
 
     pipeline._publish_urgent(memory_session, article, ai_text=None, rewrite_if_missing=True)
 
     memory_session.expire_all()
     stored = memory_session.query(Article).filter(Article.id == article.id).one()
-    assert stored.published is False
-    assert stored.ai_rewritten_text is None
+    assert stored.published is True
+    assert stored.ai_rewritten_text == fallback

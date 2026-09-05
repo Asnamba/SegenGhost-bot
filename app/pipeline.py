@@ -62,6 +62,15 @@ def _rewrite_batch(articles, urgent: bool):
     return asyncio.run(_rewrite_batch_async(articles, urgent=urgent))
 
 
+def _publish_safely(publisher, label: str, *args, **kwargs) -> bool:
+    """Isole une erreur de canal pour laisser les autres publications continuer."""
+    try:
+        return bool(publisher(*args, **kwargs))
+    except Exception as exc:
+        logger.error("Publication %s échouée (%s).", label, type(exc).__name__)
+        return False
+
+
 def cleanup_old_articles():
     """Supprime les rejets anciens et les articles publiés/relayés anciens."""
     session = get_session()
@@ -185,14 +194,14 @@ def _publish_urgent(
     article.status = "ai_processed"
 
     # Chaque canal est indépendant : l'échec de l'un n'empêche pas les autres.
-    discord_payload = build_discord_embed(article_dict, ai_text)
-    discord_ok = discord_publisher.publish(discord_payload, mode="urgent")
+    discord_payload = build_discord_embed(article_dict, ai_text, mode="urgent")
+    discord_ok = _publish_safely(discord_publisher.publish, "Discord", discord_payload, mode="urgent")
 
     telegram_text = build_telegram_message(article_dict, ai_text)
-    telegram_ok = telegram_publisher.publish_to_channel(telegram_text)
+    telegram_ok = _publish_safely(telegram_publisher.publish_to_channel, "Telegram", telegram_text)
 
     whatsapp_text = build_whatsapp_ready_text(article_dict, ai_text)
-    admin_ok = telegram_publisher.notify_admin(telegram_text, whatsapp_text)
+    admin_ok = _publish_safely(telegram_publisher.notify_admin, "notification admin", telegram_text, whatsapp_text)
 
     if not (discord_ok or telegram_ok):
         logger.error(
@@ -307,7 +316,9 @@ def publish_latest_raw_article() -> bool:
         article.ai_rewritten_text = ai_text
         article.status = "ai_processed"
         payload = build_discord_embed(article_dict, ai_text)
-        discord_ok = discord_publisher.publish(payload, mode=article.urgency or "digest")
+        discord_ok = _publish_safely(
+            discord_publisher.publish, "Discord", payload, mode=article.urgency or "digest"
+        )
         logger.info("Publication manuelle #%s : discord=%s.", article.id, discord_ok)
         if discord_ok:
             article.published = True
@@ -352,6 +363,7 @@ def run_digest():
             article.ai_rewritten_text = ai_text
             article.status = "ai_processed"
             items_for_report.append({
+                "article_id": article.id,
                 "title": article.title,
                 "category": article.category,
                 "region": article.region,
@@ -363,8 +375,8 @@ def run_digest():
             return
 
         report_text = build_digest_report(items_for_report)
-        telegram_ok = telegram_publisher.publish_to_channel(report_text)
-        admin_ok = telegram_publisher.notify_admin(report_text, report_text)
+        telegram_ok = _publish_safely(telegram_publisher.publish_to_channel, "Telegram", report_text)
+        admin_ok = _publish_safely(telegram_publisher.notify_admin, "notification admin", report_text, report_text)
 
         discord_payload = {
             "embeds": [{
@@ -373,11 +385,12 @@ def run_digest():
                 "color": 0x3498DB,
             }]
         }
-        discord_ok = discord_publisher.publish(discord_payload, mode="digest")
+        discord_ok = _publish_safely(discord_publisher.publish, "Discord", discord_payload, mode="digest")
 
         if discord_ok or telegram_ok:
+            report_article_ids = {item["article_id"] for item in items_for_report}
             for article in pending:
-                if article.ai_rewritten_text:
+                if article.id in report_article_ids:
                     article.published = True
                     article.status = "published"
                     for channel, success in (

@@ -15,7 +15,7 @@ logger = logging.getLogger("segenghost.discord")
 
 def publish(payload: dict, mode: str = "digest") -> bool:
     """Envoie par bot si configuré, sinon par webhook Discord."""
-    if discord_bot.is_configured():
+    if discord_bot.is_configured(mode=mode):
         logger.info("Publication Discord [%s] : mode bot actif, envoi via channel.send().", mode)
         return discord_bot.publish(payload, mode=mode)
 

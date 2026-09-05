@@ -47,7 +47,9 @@ def reset_client():
 
 def test_rewrite_urgent_returns_none_when_no_api_key(monkeypatch):
     monkeypatch.setattr(rewriter.settings, "anthropic_api_key", "")
-    assert rewriter.rewrite_urgent(ARTICLE) is None
+    result = rewriter.rewrite_urgent(ARTICLE)
+    assert "CVE-2026-99999" in result
+    assert "9.4" in result
 
 
 def test_rewrite_urgent_success_path(monkeypatch):
@@ -74,7 +76,7 @@ def test_rewrite_urgent_blocked_when_cve_altered(monkeypatch):
     with patch.object(rewriter, "_get_client", return_value=fake_client):
         result = rewriter.rewrite_urgent(ARTICLE)
 
-    assert result is None
+    assert "CVE-2026-99999" in result
 
 
 def test_rewrite_urgent_handles_timeout_without_raising(monkeypatch):
@@ -89,7 +91,7 @@ def test_rewrite_urgent_handles_timeout_without_raising(monkeypatch):
          patch("app.ai.rewriter.time.sleep"):
         result = rewriter.rewrite_urgent(ARTICLE)  # ne doit PAS lever d'exception
 
-    assert result is None
+    assert "CVE-2026-99999" in result
 
 
 def test_rewrite_urgent_handles_unexpected_exception_without_raising(monkeypatch):
@@ -102,7 +104,7 @@ def test_rewrite_urgent_handles_unexpected_exception_without_raising(monkeypatch
     with patch.object(rewriter, "_get_client", return_value=fake_client):
         result = rewriter.rewrite_urgent(ARTICLE)
 
-    assert result is None
+    assert "CVE-2026-99999" in result
 
 
 def test_rewrite_digest_item_empty_response_is_rejected(monkeypatch):
@@ -114,7 +116,7 @@ def test_rewrite_digest_item_empty_response_is_rejected(monkeypatch):
     with patch.object(rewriter, "_get_client", return_value=fake_client):
         result = rewriter.rewrite_digest_item(ARTICLE)
 
-    assert result is None
+    assert "CVE-2026-99999" in result
 
 
 def _fake_gemini_response(text: str):
@@ -143,7 +145,7 @@ def test_gemini_ignores_anthropic_key(monkeypatch):
     monkeypatch.setattr(rewriter.settings, "gemini_api_key", "")
     monkeypatch.setattr(rewriter.settings, "anthropic_api_key", "")
     with patch.object(rewriter, "_get_client") as anthropic_client:
-        assert rewriter.rewrite_urgent(ARTICLE) is None
+        assert "CVE-2026-99999" in rewriter.rewrite_urgent(ARTICLE)
     anthropic_client.assert_not_called()
 
 
@@ -155,7 +157,7 @@ def test_gemini_handles_transient_error_without_raising(monkeypatch):
     fake_client.models.generate_content.side_effect = TimeoutError("simulated timeout")
 
     with patch.object(rewriter, "_get_gemini_client", return_value=fake_client):
-        assert rewriter.rewrite_urgent(ARTICLE) is None
+        assert "CVE-2026-99999" in rewriter.rewrite_urgent(ARTICLE)
 
 
 def test_gemini_validation_blocks_altered_facts(monkeypatch):
@@ -165,7 +167,7 @@ def test_gemini_validation_blocks_altered_facts(monkeypatch):
     fake_client.models.generate_content.return_value = _fake_gemini_response("Une faille critique a été détectée.")
 
     with patch.object(rewriter, "_get_gemini_client", return_value=fake_client):
-        assert rewriter.rewrite_digest_item(ARTICLE) is None
+        assert "CVE-2026-99999" in rewriter.rewrite_digest_item(ARTICLE)
 
 
 def test_provider_priority_falls_back_to_next_provider(monkeypatch):
@@ -180,7 +182,7 @@ def test_provider_priority_falls_back_to_next_provider(monkeypatch):
         result = asyncio.run(rewriter.rewrite_article_async(ARTICLE, urgent=True))
 
     assert result == valid_text
-    assert [call.args[0] for call in provider_call.call_args_list] == ["groq", "gemini"]
+    assert [call.args[0] for call in provider_call.call_args_list] == ["gemini", "groq"]
 
 
 def test_all_provider_failures_return_none_without_raising(monkeypatch):
@@ -190,7 +192,8 @@ def test_all_provider_failures_return_none_without_raising(monkeypatch):
     monkeypatch.setattr(rewriter.settings, "mistral_api_key", "mistral-key")
 
     with patch.object(rewriter, "_call_provider_async", AsyncMock(return_value=None)):
-        assert asyncio.run(rewriter.rewrite_article_async(ARTICLE)) is None
+        result = asyncio.run(rewriter.rewrite_article_async(ARTICLE))
+    assert "CVE-2026-99999" in result
 
 
 def test_every_provider_receives_french_system_prompt(monkeypatch):

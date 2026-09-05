@@ -227,6 +227,24 @@ body {
   font-weight: 600;
 }
 
+/* Empêche le chevauchement vertical des badges d'état */
+.status-badge, .badge-status, .badge, .status-pill {
+  white-space: nowrap !important;
+  display: inline-block !important;
+  word-break: normal !important;
+  overflow: visible !important;
+  letter-spacing: normal !important;
+}
+
+/* Fixe le conteneur pour éviter le retour à la ligne lettre par lettre */
+.article-status-container {
+  min-width: 140px !important;
+  width: auto !important;
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
 .status-badge--success { color: var(--ok); border-color: var(--ok); }
 .status-badge--info { color: var(--info); border-color: var(--info); }
 .status-badge--warning { color: var(--amber); border-color: var(--amber); }

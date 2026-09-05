@@ -16,7 +16,7 @@ import asyncio
 from difflib import SequenceMatcher
 import logging
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import anthropic
 import httpx
@@ -42,14 +42,16 @@ PROVIDER_KEYS = {
     "mistral": "mistral_api_key",
     "anthropic": "anthropic_api_key",
 }
+STRICT_PROVIDER_ORDER = ("gemini", "groq", "mistral", "anthropic")
 
 
 def _record_usage(provider: str, article: Dict, success: bool, error_message: str | None = None):
     article_id = article.get("id")
     if article_id is None:
         return
-    session = get_session()
+    session = None
     try:
+        session = get_session()
         session.add(AIUsage(
             provider=provider,
             success=success,
@@ -58,10 +60,12 @@ def _record_usage(provider: str, article: Dict, success: bool, error_message: st
         ))
         session.commit()
     except Exception as exc:
-        session.rollback()
+        if session is not None:
+            session.rollback()
         logger.warning("Enregistrement usage IA impossible (%s).", type(exc).__name__)
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 # Erreurs considérées comme transitoires : on retente avant d'abandonner.
 _RETRYABLE_EXCEPTIONS = (
@@ -118,7 +122,7 @@ def _validate_factual_integrity(article: Dict, generated_text: str) -> bool:
     Contrôle basique post-génération : si un CVE ou un score CVSS était présent
     dans les données d'entrée, il doit apparaître tel quel dans le texte généré.
     """
-    if not generated_text:
+    if not isinstance(generated_text, str) or not generated_text.strip():
         logger.warning("Validation échouée : réponse IA vide.")
         return False
 
@@ -196,15 +200,6 @@ def _call_anthropic(system_prompt: str, structured_input: str, max_tokens: int, 
     return None
 
 
-def _call_ai(system_prompt: str, structured_input: str, max_tokens: int, label: str) -> Optional[str]:
-    if settings.ai_provider == "gemini":
-        return _call_gemini(system_prompt, structured_input, max_tokens, label)
-    if settings.ai_provider == "anthropic":
-        return _call_anthropic(system_prompt, structured_input, max_tokens, label)
-    logger.error("Fournisseur IA invalide [%s]", settings.ai_provider)
-    return None
-
-
 async def _call_openai_compatible(
     provider: str,
     api_key: str,
@@ -268,31 +263,64 @@ async def _call_provider_async(
 
 
 async def rewrite_article_async(article: Dict, urgent: bool = False) -> Optional[str]:
-    """Réécrit un article avec fallback dans l'ordre des providers configurés."""
+    """Réécrit un article selon la cascade stricte, avec fallback local."""
     system_prompt = SYSTEM_PROMPT_URGENT if urgent else SYSTEM_PROMPT_DIGEST_ITEM
     max_tokens = 500 if urgent else 250
     structured_input = _build_structured_input(article)
-    priority = [
-        provider.strip().lower()
-        for provider in settings.ai_provider_priority.split(",")
-        if provider.strip().lower() in PROVIDER_KEYS
-    ]
-    if settings.ai_provider in PROVIDER_KEYS and settings.ai_provider not in priority:
-        priority.insert(0, settings.ai_provider)
+    for provider in STRICT_PROVIDER_ORDER:
+        try:
+            generated_text = await _call_provider_async(
+                provider, system_prompt, structured_input, max_tokens,
+                "urgent" if urgent else "digest", article,
+            )
+        except Exception as exc:
+            generated_text = None
+            logger.warning("Provider IA %s échoué (%s), fallback suivant.", provider, type(exc).__name__)
 
-    for provider in priority:
-        generated_text = await _call_provider_async(
-            provider, system_prompt, structured_input, max_tokens,
-            "urgent" if urgent else "digest", article,
-        )
-        if generated_text and _validate_factual_integrity(article, generated_text):
+        try:
+            valid = bool(generated_text and _validate_factual_integrity(article, generated_text))
+        except Exception as exc:
+            valid = False
+            logger.warning("Validation IA %s échouée (%s), fallback suivant.", provider, type(exc).__name__)
+        if valid:
             logger.info("Article réécrit avec succès par %s.", provider)
             return generated_text
-        if generated_text:
-            logger.warning("Validation factuelle échouée avec %s, fallback suivant.", provider)
+        logger.warning("Provider IA %s indisponible ou réponse invalide, fallback suivant.", provider)
 
-    logger.warning("Tous les providers IA ont échoué pour l'article %s.", article.get("title", "inconnu"))
-    return None
+    fallback = _build_local_fallback(article)
+    fallback_text = fallback["ai_text"]
+    if _validate_factual_integrity(article, fallback_text):
+        logger.warning("Fallback local utilisé pour l'article %s.", article.get("title", "inconnu"))
+        return fallback_text
+    logger.error("Fallback local invalide pour l'article %s.", article.get("title", "inconnu"))
+    return fallback_text
+
+
+def _build_local_fallback(article: Dict) -> Dict[str, Any]:
+    """Produit une structure complète et factuelle quand aucun provider n'est disponible."""
+    cve = article.get("cve_id") or "non disponible"
+    cvss = article.get("cvss_score") if article.get("cvss_score") is not None else "non disponible"
+    summary = (article.get("raw_summary") or "Aucun résumé source disponible.").strip()
+    ai_text = (
+        f"Synthèse locale de l'alerte : {article.get('title', 'Menace non spécifiée')}.\n"
+        f"{summary}\n\nCVE : {cve} | CVSS : {cvss}"
+    )
+    return {
+        "title": article.get("title", "Menace non spécifiée"),
+        "source": article.get("source", "non disponible"),
+        "source_url": article.get("source_url"),
+        "cve_id": article.get("cve_id"),
+        "cvss_score": article.get("cvss_score"),
+        "region": article.get("region"),
+        "category": article.get("category"),
+        "raw_summary": summary,
+        "ai_text": ai_text,
+    }
+
+
+async def process_article_with_fallback(article: Dict, urgent: bool = False) -> str:
+    """API publique de traitement IA : elle retourne toujours un texte publiable."""
+    return await rewrite_article_async(article, urgent=urgent)
 
 
 def _is_gemini_retryable(exc: Exception) -> bool:
@@ -341,11 +369,11 @@ def _call_gemini(system_prompt: str, structured_input: str, max_tokens: int, lab
     return None
 
 
-def rewrite_urgent(article: Dict) -> Optional[str]:
-    """Génère le texte d'une alerte urgente. Retourne None si l'appel ou la validation échoue."""
+def rewrite_urgent(article: Dict) -> str:
+    """Génère le texte d'une alerte urgente, avec fallback local garanti."""
     return asyncio.run(rewrite_article_async(article, urgent=True))
 
 
-def rewrite_digest_item(article: Dict) -> Optional[str]:
-    """Génère le résumé court d'un item de digest. Retourne None si l'appel ou la validation échoue."""
+def rewrite_digest_item(article: Dict) -> str:
+    """Génère le résumé court d'un item de digest, avec fallback local garanti."""
     return asyncio.run(rewrite_article_async(article, urgent=False))

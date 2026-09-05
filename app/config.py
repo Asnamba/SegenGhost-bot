@@ -16,6 +16,24 @@ load_dotenv()
 logger = logging.getLogger("segenghost.config")
 
 
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    try:
+        return int(value) if value is not None else default
+    except ValueError:
+        logger.warning("Valeur %s invalide, utilisation de %s.", name, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    try:
+        return float(value) if value is not None else default
+    except ValueError:
+        logger.warning("Valeur %s invalide, utilisation de %s.", name, default)
+        return default
+
+
 @dataclass
 class Settings:
     # --- Base de données ---
@@ -28,6 +46,7 @@ class Settings:
     discord_channel_id: str = os.getenv("DISCORD_CHANNEL_ID", "")
     discord_channel_urgent_id: str = os.getenv("DISCORD_CHANNEL_URGENT_ID", "")
     discord_channel_digest_id: str = os.getenv("DISCORD_CHANNEL_DIGEST_ID", "")
+    discord_bot_icon_url: str = os.getenv("DISCORD_BOT_ICON_URL", "")
 
     # --- Telegram ---
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -41,27 +60,27 @@ class Settings:
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     mistral_api_key: str = os.getenv("MISTRAL_API_KEY", "")
     ai_provider_priority: str = os.getenv(
-        "AI_PROVIDER_PRIORITY", "groq,gemini,mistral"
+        "AI_PROVIDER_PRIORITY", "gemini,groq,mistral,anthropic"
     )
     ai_model: str = os.getenv("AI_MODEL", "claude-sonnet-4-6")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    ai_max_retries: int = int(os.getenv("AI_MAX_RETRIES", "2"))
-    ai_timeout_seconds: float = float(os.getenv("AI_TIMEOUT_SECONDS", "30"))
+    ai_max_retries: int = field(default_factory=lambda: _env_int("AI_MAX_RETRIES", 2))
+    ai_timeout_seconds: float = field(default_factory=lambda: _env_float("AI_TIMEOUT_SECONDS", 30.0))
 
     # --- Seuils de classification ---
-    cvss_urgent_threshold: float = float(os.getenv("CVSS_URGENT_THRESHOLD", "8.5"))
+    cvss_urgent_threshold: float = field(default_factory=lambda: _env_float("CVSS_URGENT_THRESHOLD", 8.5))
 
     # --- Planification du digest (heures locales, format HH:MM) ---
     digest_times: List[str] = field(default_factory=lambda: ["08:00", "14:00", "19:00"])
 
     # --- Fréquence de collecte (minutes) ---
-    collect_interval_minutes: int = int(os.getenv("COLLECT_INTERVAL_MINUTES", "60"))
+    collect_interval_minutes: int = field(default_factory=lambda: _env_int("COLLECT_INTERVAL_MINUTES", 60))
 
     # --- Réseau / résilience ---
-    http_timeout_seconds: float = float(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))
-    rss_fetch_max_retries: int = int(os.getenv("RSS_FETCH_MAX_RETRIES", "2"))
-    rejected_retention_days: int = int(os.getenv("REJECTED_RETENTION_DAYS", "30"))
-    published_retention_days: int = int(os.getenv("PUBLISHED_RETENTION_DAYS", "90"))
+    http_timeout_seconds: float = field(default_factory=lambda: _env_float("HTTP_TIMEOUT_SECONDS", 15.0))
+    rss_fetch_max_retries: int = field(default_factory=lambda: _env_int("RSS_FETCH_MAX_RETRIES", 2))
+    rejected_retention_days: int = field(default_factory=lambda: _env_int("REJECTED_RETENTION_DAYS", 30))
+    published_retention_days: int = field(default_factory=lambda: _env_int("PUBLISHED_RETENTION_DAYS", 90))
 
     # --- Logging ---
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

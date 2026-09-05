@@ -6,11 +6,13 @@ Le pipeline et APScheduler restent synchrones : publish() soumet une coroutine
 import asyncio
 import logging
 import threading
+from datetime import datetime, timezone
 from typing import Optional
 
 import discord
 
 from app.config import settings
+from app.publishers.formatter import build_discord_embed
 
 logger = logging.getLogger("segenghost.discord_bot")
 
@@ -25,11 +27,10 @@ class _DiscordClient(discord.Client):
         logger.info("Bot Discord connecté.")
 
 
-def is_configured() -> bool:
+def is_configured(mode: str = "digest") -> bool:
+    channel_id = _channel_id(mode)
     return bool(settings.discord_token and (
-        settings.discord_channel_id
-        or settings.discord_channel_urgent_id
-        or settings.discord_channel_digest_id
+        channel_id
     ))
 
 
@@ -115,6 +116,27 @@ def publish(payload: dict, mode: str) -> bool:
     except Exception as exc:
         logger.error("Publication Discord par bot échouée [%s] (%s).", mode, type(exc).__name__)
         return False
+
+
+def send_cti_embed(article: dict, summary: str, mode: str = "urgent") -> bool:
+    """Construit un ``discord.Embed`` CTI conforme puis l'envoie."""
+    payload = build_discord_embed(article, summary)["embeds"][0]
+    embed = discord.Embed(
+        title=payload["title"],
+        url=payload.get("url"),
+        description=payload["description"],
+        color=payload["color"],
+        timestamp=datetime.now(timezone.utc),
+    )
+    for field in payload.get("fields", []):
+        embed.add_field(**field)
+    if payload["footer"].get("icon_url"):
+        embed.set_footer(text=payload["footer"]["text"], icon_url=payload["footer"]["icon_url"])
+    else:
+        embed.set_footer(text=payload["footer"]["text"])
+    if payload.get("image"):
+        embed.set_image(url=payload["image"]["url"])
+    return publish({"embeds": [embed.to_dict()]}, mode=mode)
 
 
 async def _close_client() -> None:
