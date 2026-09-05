@@ -34,6 +34,7 @@ from app.publishers import discord_publisher, telegram_publisher
 
 logger = logging.getLogger("segenghost.pipeline")
 AI_BATCH_SIZE = 5
+RETRYABLE_STATUSES = ("raw", "pending_retry")
 
 
 async def _rewrite_batch_async(articles, urgent: bool):
@@ -69,6 +70,24 @@ def _publish_safely(publisher, label: str, *args, **kwargs) -> bool:
     except Exception as exc:
         logger.error("Publication %s échouée (%s).", label, type(exc).__name__)
         return False
+
+
+def _mark_ai_failure(session, article: Article) -> None:
+    """Enregistre un échec IA sans exposer le contenu brut à un publisher."""
+    article.retry_count = (article.retry_count or 0) + 1
+    if article.retry_count >= settings.ai_max_retry_cycles:
+        article.status = "failed_permanently"
+        logger.error(
+            "Article #%s définitivement non traité après %d cycle(s) IA.",
+            article.id, article.retry_count,
+        )
+    else:
+        article.status = "pending_retry"
+        logger.warning(
+            "Article #%s placé en attente de réessai (%d/%d).",
+            article.id, article.retry_count, settings.ai_max_retry_cycles,
+        )
+    session.commit()
 
 
 def cleanup_old_articles():
@@ -168,6 +187,10 @@ def _publish_urgent(
     """
     article_dict = _article_to_dict(article)
 
+    if article.status == "failed_permanently":
+        logger.warning("Article #%s définitivement échoué : aucun publisher appelé.", article.id)
+        return
+
     logger.info(
         "Article #%s candidat à publication urgente : urgency=%s, published=%s, provider=%s.",
         article.id, article.urgency, article.published, settings.ai_provider,
@@ -179,9 +202,10 @@ def _publish_urgent(
     elif settings.ai_provider not in {"gemini", "anthropic"}:
         logger.info("Article #%s ignoré : fournisseur IA invalide (%s).", article.id, settings.ai_provider)
 
-    if ai_text is None and rewrite_if_missing:
+    if not ai_text and rewrite_if_missing:
         ai_text = rewrite_urgent(article_dict)
-    if ai_text is None:
+    if not ai_text:
+        _mark_ai_failure(session, article)
         logger.error(
             "Article #%s non publié : tous les fournisseurs IA ont échoué ou la validation a bloqué la réponse.",
             article.id,
@@ -244,13 +268,16 @@ def run_collect_and_urgent():
         new_entries = filter_new_entries(session, raw_entries)
         stored_articles = _store_new_entries(session, new_entries)
 
-        urgent_articles = [a for a in stored_articles if a.urgency == "urgent" and not a.published]
+        urgent_articles = [
+            a for a in stored_articles
+            if a.urgency == "urgent" and not a.published and a.status in RETRYABLE_STATUSES
+        ]
         pending_urgent = (
             session.query(Article)
             .filter(
                 Article.urgency == "urgent",
                 Article.published.is_(False),
-                Article.status != "rejected_prefilter",
+                Article.status.in_(RETRYABLE_STATUSES),
             )
             .order_by(Article.collected_at.asc())
             .all()
@@ -296,7 +323,7 @@ def publish_latest_raw_article() -> bool:
             session.query(Article)
             .filter(
                 Article.published.is_(False),
-                Article.status != "rejected_prefilter",
+                Article.status.in_(RETRYABLE_STATUSES),
             )
             .order_by(Article.collected_at.desc(), Article.id.desc())
             .first()
@@ -309,7 +336,8 @@ def publish_latest_raw_article() -> bool:
         article_dict = _article_to_dict(article)
         rewrite = rewrite_urgent if article.urgency == "urgent" else rewrite_digest_item
         ai_text = rewrite(article_dict)
-        if ai_text is None:
+        if not ai_text:
+            _mark_ai_failure(session, article)
             logger.info("Publication manuelle #%s ignorée : traitement IA indisponible ou invalide.", article.id)
             return False
 
@@ -342,7 +370,7 @@ def run_digest():
             .filter(
                 Article.urgency == "digest",
                 Article.published.is_(False),
-                Article.status != "rejected_prefilter",
+                Article.status.in_(RETRYABLE_STATUSES),
             )
             .order_by(Article.collected_at.desc())
             .limit(20)
@@ -358,6 +386,7 @@ def run_digest():
         for article in pending:
             ai_text = ai_results.get(article.id)
             if not ai_text:
+                _mark_ai_failure(session, article)
                 logger.info("Item digest #%s non publié : traitement IA indisponible ou invalide.", article.id)
                 continue
             article.ai_rewritten_text = ai_text

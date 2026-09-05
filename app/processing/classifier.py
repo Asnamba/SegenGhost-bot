@@ -10,7 +10,10 @@ import re
 from typing import Dict, Optional
 
 CVE_PATTERN = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
-CVSS_PATTERN = re.compile(r"CVSS[:\s]*([0-9]{1,2}\.[0-9])", re.IGNORECASE)
+CVSS_PATTERN = re.compile(
+    r"CVSS(?:\s*v?\d+(?:\.\d+)?)?\s*(?:score)?\s*[:\-]?\s*([0-9]{1,2}(?:\.[0-9])?)",
+    re.IGNORECASE,
+)
 
 EXPLOITATION_KEYWORDS = [
     "actively exploited", "exploited in the wild", "exploitation confirmed",

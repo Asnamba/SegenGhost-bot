@@ -3,7 +3,7 @@
 {% block content %}
 <header class="masthead">
   <p class="masthead__title">Boîte de réception CTI</p>
-  <p class="masthead__subtitle">Alertes IA prêtes à relayer manuellement vers WhatsApp</p>
+  <p class="masthead__subtitle">Alertes IA et contenus non traités à vérifier avant tout relais manuel</p>
   <p><a class="back" href="/dashboard">Retour au dashboard</a></p>
 </header>
 <main class="list inbox-list">
@@ -11,12 +11,21 @@
     {% for article in articles %}
       <article class="inbox-item">
         <div class="row__meta">
-          <span class="status-badge status-badge--info">Traité par IA</span>
+          {% if article.status == "failed_permanently" %}
+            <span class="status-badge status-badge--danger">⚠️ Non traité par l'IA — contenu brut, vérification manuelle requise</span>
+          {% else %}
+            <span class="status-badge status-badge--info">Traité par IA</span>
+          {% endif %}
           <span>{{ article.source }}</span>
           <span>{{ article.collected_at.strftime('%d/%m/%Y %H:%M') }}</span>
         </div>
         <h2>{{ article.title }}</h2>
-        <textarea class="inbox-text" readonly>{{ article.ai_rewritten_text }}</textarea>
+        {% if article.status == "failed_permanently" %}
+          <p class="status-warning">Contenu brut non vérifié :</p>
+          <textarea class="inbox-text" readonly>{{ article.raw_summary or "Résumé brut indisponible." }}</textarea>
+        {% else %}
+          <textarea class="inbox-text" readonly>{{ article.ai_rewritten_text }}</textarea>
+        {% endif %}
         <div class="inbox-actions">
           <button type="button" onclick="navigator.clipboard.writeText(this.closest('.inbox-item').querySelector('.inbox-text').value)">Copier</button>
           <form method="post" action="/dashboard/inbox/{{ article.id }}/relay">

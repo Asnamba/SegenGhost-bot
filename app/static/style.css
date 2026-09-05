@@ -248,6 +248,15 @@ body {
 .status-badge--success { color: var(--ok); border-color: var(--ok); }
 .status-badge--info { color: var(--info); border-color: var(--info); }
 .status-badge--warning { color: var(--amber); border-color: var(--amber); }
+.status-badge--danger { color: var(--critical); border-color: var(--critical); }
+
+.status-warning {
+  color: var(--critical);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
 
 .row__aside {
   text-align: right;

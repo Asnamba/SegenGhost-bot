@@ -13,6 +13,7 @@ timeout et peut bloquer indéfiniment sur une source qui ne répond pas.
 import hashlib
 import ipaddress
 import logging
+import re
 import time
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -165,17 +166,26 @@ def _collect_source(source: Dict) -> List[Dict]:
 
 
 def _extract_image_url(entry) -> Optional[str]:
-    """Extrait uniquement une image déclarée nativement par le flux RSS/Atom."""
+    """Extrait une image du flux, sans requête supplémentaire vers la source."""
     candidates = []
     candidates.extend(getattr(entry, "media_content", []) or [])
     candidates.extend(getattr(entry, "media_thumbnail", []) or [])
     candidates.extend(getattr(entry, "enclosures", []) or [])
     for candidate in candidates:
-        url = candidate.get("url") if hasattr(candidate, "get") else None
+        url = (
+            (candidate.get("url") or candidate.get("href"))
+            if hasattr(candidate, "get") else None
+        )
         mime_type = candidate.get("type", "") if hasattr(candidate, "get") else ""
         if url and (mime_type.startswith("image/") or "thumbnail" in str(candidate).lower() or not mime_type):
             if _is_safe_url(url):
                 return url
+
+    summary = getattr(entry, "summary", "") or getattr(entry, "description", "") or ""
+    if isinstance(summary, str):
+        match = re.search(r"<img\b[^>]*\bsrc\s*=\s*(['\"])(.*?)\1", summary, re.IGNORECASE)
+        if match and _is_safe_url(match.group(2)):
+            return match.group(2)
     return None
 
 

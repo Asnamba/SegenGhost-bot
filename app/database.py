@@ -56,6 +56,7 @@ class Article(Base):
     published = Column(Boolean, default=False)
     ai_rewritten_text = Column(Text, nullable=True)
     status = Column(String(32), default="raw", nullable=False, index=True)
+    retry_count = Column(Integer, default=0, nullable=False)
     whatsapp_relayed = Column(Boolean, default=False, nullable=False, index=True)
     whatsapp_relayed_at = Column(DateTime, nullable=True)
 
@@ -101,6 +102,7 @@ def _ensure_article_columns():
     additions = {
         "image_url": "VARCHAR(2048) NULL",
         "status": "VARCHAR(32) NOT NULL DEFAULT 'raw'",
+        "retry_count": "INTEGER NOT NULL DEFAULT 0",
         "whatsapp_relayed": "BOOLEAN NOT NULL DEFAULT FALSE",
         "whatsapp_relayed_at": "TIMESTAMP NULL",
     }

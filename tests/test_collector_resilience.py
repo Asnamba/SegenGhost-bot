@@ -4,13 +4,14 @@ Aucun appel réseau réel : httpx.get est mocké. Vérifie qu'une source en éch
 n'empêche jamais la collecte des autres, et que les tentatives de retry
 respectent la configuration sans jamais lever d'exception vers l'appelant.
 """
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import httpx
 import pytest
 
 from app.collectors import rss_collector
-from app.publishers.formatter import build_discord_embed
+from app.publishers.formatter import build_discord_embed, extract_cvss_from_text
 from app.collectors.sources import SOURCES
 
 
@@ -148,3 +149,62 @@ def test_discord_embed_has_no_image_without_rss_image():
         "urgency": "urgent",
     }
     assert "image" not in build_discord_embed(article, "Texte rédigé en français")["embeds"][0]
+
+
+def test_extract_image_from_media_content():
+    entry = SimpleNamespace(
+        media_content=[{"url": "https://cdn.example.org/content.jpg", "type": "image/jpeg"}],
+        media_thumbnail=[],
+        enclosures=[],
+        summary="",
+    )
+    assert rss_collector._extract_image_url(entry) == "https://cdn.example.org/content.jpg"
+
+
+def test_extract_image_from_media_thumbnail():
+    entry = SimpleNamespace(
+        media_content=[],
+        media_thumbnail=[{"url": "https://cdn.example.org/thumb.jpg", "type": "image/jpeg"}],
+        enclosures=[],
+        summary="",
+    )
+    assert rss_collector._extract_image_url(entry) == "https://cdn.example.org/thumb.jpg"
+
+
+def test_extract_image_from_image_enclosure():
+    entry = SimpleNamespace(
+        media_content=[],
+        media_thumbnail=[],
+        enclosures=[{"href": "https://cdn.example.org/enclosure.png", "type": "image/png"}],
+        summary="",
+    )
+    assert rss_collector._extract_image_url(entry) == "https://cdn.example.org/enclosure.png"
+
+
+def test_extract_image_from_html_summary():
+    entry = SimpleNamespace(
+        media_content=[],
+        media_thumbnail=[],
+        enclosures=[],
+        summary='<p>Résumé</p><img src="https://cdn.example.org/summary.webp" alt="illustration">',
+    )
+    assert rss_collector._extract_image_url(entry) == "https://cdn.example.org/summary.webp"
+
+
+def test_extract_image_returns_none_when_entry_has_no_image():
+    entry = SimpleNamespace(media_content=[], media_thumbnail=[], enclosures=[], summary="Résumé sans image")
+    assert rss_collector._extract_image_url(entry) is None
+
+
+def test_cvss_is_extracted_from_source_summary_when_article_score_is_missing():
+    article = {
+        "title": "Chrome V8 zero-day",
+        "source": "RSS",
+        "source_url": "https://example.org/article",
+        "raw_summary": "Correctif publié pour une faille CVSS score: 8.8.",
+        "cvss_score": None,
+    }
+    assert extract_cvss_from_text("CVSS score: 8.8") == "8.8"
+    assert extract_cvss_from_text("CVSS: 8.8") == "8.8"
+    fields = build_discord_embed(article, None)["embeds"][0]["fields"]
+    assert fields[1]["value"] == "8.8"

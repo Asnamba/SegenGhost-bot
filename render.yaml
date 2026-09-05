@@ -43,13 +43,15 @@ services:
       - key: MISTRAL_API_KEY
         value: ""
       - key: AI_PROVIDER_PRIORITY
-        value: groq,gemini,mistral
+        value: gemini,groq,mistral,anthropic
       - key: AI_MODEL
         value: claude-sonnet-4-6
       - key: AI_MAX_RETRIES
         value: "2"
       - key: AI_TIMEOUT_SECONDS
         value: "30"
+      - key: AI_MAX_RETRY_CYCLES
+        value: "3"
       - key: CVSS_URGENT_THRESHOLD
         value: "8.5"
       - key: COLLECT_INTERVAL_MINUTES

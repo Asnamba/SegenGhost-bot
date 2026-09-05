@@ -56,6 +56,10 @@ def search_articles(
         q = q.filter(Article.ai_rewritten_text.is_(None))
     elif status == "rejected_prefilter":
         q = q.filter(Article.status == "rejected_prefilter")
+    elif status == "pending_retry":
+        q = q.filter(Article.status == "pending_retry")
+    elif status == "failed_permanently":
+        q = q.filter(Article.status == "failed_permanently")
 
     if region:
         q = q.filter(Article.region == region)
@@ -133,8 +137,7 @@ def get_inbox_articles(session: Session) -> List[Article]:
     return (
         session.query(Article)
         .filter(
-            Article.status.in_(("ai_processed", "published")),
-            Article.ai_rewritten_text.isnot(None),
+            Article.status.in_(("ai_processed", "published", "failed_permanently")),
             Article.whatsapp_relayed.is_(False),
         )
         .order_by(Article.collected_at.desc())

@@ -16,7 +16,7 @@ import asyncio
 from difflib import SequenceMatcher
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import anthropic
 import httpx
@@ -263,7 +263,7 @@ async def _call_provider_async(
 
 
 async def rewrite_article_async(article: Dict, urgent: bool = False) -> Optional[str]:
-    """Réécrit un article selon la cascade stricte, avec fallback local."""
+    """Réécrit un article selon la cascade stricte, sans publier de texte brut."""
     system_prompt = SYSTEM_PROMPT_URGENT if urgent else SYSTEM_PROMPT_DIGEST_ITEM
     max_tokens = 500 if urgent else 250
     structured_input = _build_structured_input(article)
@@ -287,35 +287,11 @@ async def rewrite_article_async(article: Dict, urgent: bool = False) -> Optional
             return generated_text
         logger.warning("Provider IA %s indisponible ou réponse invalide, fallback suivant.", provider)
 
-    fallback = _build_local_fallback(article)
-    fallback_text = fallback["ai_text"]
-    if _validate_factual_integrity(article, fallback_text):
-        logger.warning("Fallback local utilisé pour l'article %s.", article.get("title", "inconnu"))
-        return fallback_text
-    logger.error("Fallback local invalide pour l'article %s.", article.get("title", "inconnu"))
-    return fallback_text
-
-
-def _build_local_fallback(article: Dict) -> Dict[str, Any]:
-    """Produit une structure complète et factuelle quand aucun provider n'est disponible."""
-    cve = article.get("cve_id") or "non disponible"
-    cvss = article.get("cvss_score") if article.get("cvss_score") is not None else "non disponible"
-    summary = (article.get("raw_summary") or "Aucun résumé source disponible.").strip()
-    ai_text = (
-        f"Synthèse locale de l'alerte : {article.get('title', 'Menace non spécifiée')}.\n"
-        f"{summary}\n\nCVE : {cve} | CVSS : {cvss}"
+    logger.error(
+        "Aucun provider IA n'a produit une rédaction valide pour l'article %s; publication bloquée.",
+        article.get("title", "inconnu"),
     )
-    return {
-        "title": article.get("title", "Menace non spécifiée"),
-        "source": article.get("source", "non disponible"),
-        "source_url": article.get("source_url"),
-        "cve_id": article.get("cve_id"),
-        "cvss_score": article.get("cvss_score"),
-        "region": article.get("region"),
-        "category": article.get("category"),
-        "raw_summary": summary,
-        "ai_text": ai_text,
-    }
+    return None
 
 
 async def process_article_with_fallback(article: Dict, urgent: bool = False) -> str:

@@ -113,8 +113,7 @@ def mark_as_relayed(article_id: int):
     try:
         article = session.query(Article).filter(
             Article.id == article_id,
-            Article.status.in_(("ai_processed", "published")),
-            Article.ai_rewritten_text.isnot(None),
+            Article.status.in_(("ai_processed", "published", "failed_permanently")),
             Article.whatsapp_relayed.is_(False),
         ).first()
         if article is None:

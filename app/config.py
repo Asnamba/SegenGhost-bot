@@ -66,6 +66,7 @@ class Settings:
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
     ai_max_retries: int = field(default_factory=lambda: _env_int("AI_MAX_RETRIES", 2))
     ai_timeout_seconds: float = field(default_factory=lambda: _env_float("AI_TIMEOUT_SECONDS", 30.0))
+    ai_max_retry_cycles: int = field(default_factory=lambda: _env_int("AI_MAX_RETRY_CYCLES", 3))
 
     # --- Seuils de classification ---
     cvss_urgent_threshold: float = field(default_factory=lambda: _env_float("CVSS_URGENT_THRESHOLD", 8.5))

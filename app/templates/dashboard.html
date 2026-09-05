@@ -47,6 +47,8 @@
     <option value="ai" {% if filters.status == "ai" %}selected{% endif %}>Traités par IA</option>
     <option value="raw" {% if filters.status == "raw" %}selected{% endif %}>Brut / Non traités</option>
     <option value="rejected_prefilter" {% if filters.status == "rejected_prefilter" %}selected{% endif %}>Rejetés avant IA</option>
+    <option value="pending_retry" {% if filters.status == "pending_retry" %}selected{% endif %}>En attente de réessai</option>
+    <option value="failed_permanently" {% if filters.status == "failed_permanently" %}selected{% endif %}>Non traité — vérification manuelle</option>
   </select>
 
   <select name="category">
@@ -91,7 +93,11 @@
         <div class="row__body">
           <div class="row__title">{{ a.title }}</div>
           <div class="row__meta">
-            {% if a.published %}
+            {% if a.status == "failed_permanently" %}
+              <span class="status-badge status-badge--danger">Non traité — vérification manuelle</span>
+            {% elif a.status == "pending_retry" %}
+              <span class="status-badge status-badge--warning">En attente de réessai</span>
+            {% elif a.published %}
               <span class="status-badge status-badge--success">Publié</span>
             {% elif a.ai_rewritten_text %}
               <span class="status-badge status-badge--info">Traité par IA</span>
